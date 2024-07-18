@@ -23,11 +23,14 @@ pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 #[error("Suitability Error: {0}.")]
 pub struct CompatibilityError(pub &'static str);
 
-pub static VERTICES: [Vertex; 3] = [
-    Vertex::new(Vector3::new(0.0, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(0.5, 0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-0.5, 0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+pub static VERTICES: [Vertex; 4] = [
+    Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(0.5, -0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(0.5, 0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(-0.5, 0.5, 0.0), Vector4::new(1.0, 1.0, 1.0, 1.0)),
 ];
+
+pub static INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 pub extern "system" fn debug_callback(severity: vk::DebugUtilsMessageSeverityFlagsEXT, message_type: vk::DebugUtilsMessageTypeFlagsEXT,
                                   data: *const vk::DebugUtilsMessengerCallbackDataEXT, _: *mut c_void)

@@ -161,6 +161,7 @@ impl VulkanApi {
             .physical_device(physical_device)
             .logical_device(&logical_device)
             .swapchain_data(&swapchain_data)
+            .graphics_queue(graphics_queue)
             .build()
             .unwrap();
 
@@ -377,6 +378,7 @@ impl VulkanApi {
             .physical_device(self.data.physical_device)
             .logical_device(&self.data.logical_device)
             .swapchain_data(&self.data.swapchain_data)
+            .graphics_queue(self.data.graphics_queue)
             .build()
             .unwrap();
 

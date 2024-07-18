@@ -1,14 +1,15 @@
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
-use anyhow::anyhow;
-use vulkanalia::{Device, Instance, vk};
-use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferLevel, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CullModeFlags, DeviceMemory, DeviceV1_0, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport};
-use winit::window::Window;
-use crate::graphics::vulkan::vertex::Vertex;
 
+use anyhow::anyhow;
+use vulkanalia::{Device, Instance};
+use vulkanalia::bytecode::Bytecode;
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CullModeFlags, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport};
+use winit::window::Window;
+
+use crate::graphics::vulkan::vertex::Vertex;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
-use crate::graphics::vulkan::vulkan_utils::{LogicalDeviceDestroy, QueueFamilyIndices, VERTICES};
+use crate::graphics::vulkan::vulkan_utils::{INDICES, LogicalDeviceDestroy, QueueFamilyIndices, VERTICES};
 
 #[derive(Debug, Default)]
 pub struct PipelineData {
@@ -23,6 +24,10 @@ pub struct PipelineData {
     //ToDo: Move
     pub(crate) vertex_buffer: Buffer,
     pub(crate) vertex_buffer_memory: DeviceMemory,
+
+    //ToDo: Move
+    pub(crate) index_buffer: Buffer,
+    pub(crate) index_buffer_memory: DeviceMemory,
 }
 
 impl LogicalDeviceDestroy for PipelineData {
@@ -39,12 +44,16 @@ impl LogicalDeviceDestroy for PipelineData {
            logical_device.destroy_pipeline_layout(self.pipeline_layout, None);
            logical_device.destroy_pipeline(self.pipeline, None);
 
+           logical_device.destroy_buffer(self.index_buffer, None);
+           logical_device.free_memory(self.index_buffer_memory, None);
+
            logical_device.destroy_buffer(self.vertex_buffer, None);
            logical_device.free_memory(self.vertex_buffer_memory, None);
        }
    }
 }
 
+//ToDo: Restructure
 #[derive(Debug, Default)]
 pub struct PipelineDataBuilder<'a> {
     value: PipelineData,
@@ -53,7 +62,8 @@ pub struct PipelineDataBuilder<'a> {
     physical_device: PhysicalDevice,
     logical_device: Option<&'a Device>,
     surface: SurfaceKHR,
-    swapchain_data: Option<&'a SwapchainData>
+    swapchain_data: Option<&'a SwapchainData>,
+    graphics_queue: Queue
 }
 
 impl<'a> PipelineDataBuilder<'a> {
@@ -87,16 +97,23 @@ impl<'a> PipelineDataBuilder<'a> {
         self
     }
 
+    pub fn graphics_queue(mut self, graphics_queue: Queue) -> Self {
+        self.graphics_queue = graphics_queue;
+        self
+    }
+
     pub fn build(&mut self) -> anyhow::Result<PipelineData> {
         assert!(self.window.is_some());
         assert!(self.instance.is_some());
         assert!(self.logical_device.is_some());
         assert!(self.swapchain_data.is_some());
+        assert!(!self.graphics_queue.is_null());
 
         self.create_pipeline();
         self.create_framebuffers();
-        self.create_vertex_buffer();
         self.create_command_pool();
+        self.create_vertex_buffer();
+        self.create_index_buffer();
         self.create_command_buffers();
 
         Ok(take(&mut self.value))
@@ -322,10 +339,10 @@ impl<'a> PipelineDataBuilder<'a> {
         let command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
 
         for (i, command_buffer) in command_buffers.iter().enumerate() {
-            let command_buffer_inheritance_info = vk::CommandBufferInheritanceInfo::builder();
+            let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
 
-            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::empty()) // Optional.
+            let command_buffer_begin_info = CommandBufferBeginInfo::builder()
+                .flags(CommandBufferUsageFlags::empty()) // Optional.
                 .inheritance_info(&command_buffer_inheritance_info);             // Optional.
 
             unsafe { logical_device.begin_command_buffer(*command_buffer, &command_buffer_begin_info) }.unwrap();
@@ -349,18 +366,17 @@ impl<'a> PipelineDataBuilder<'a> {
                 .clear_values(clear_values)
                 ;
 
-
             unsafe {
                 logical_device.cmd_begin_render_pass(*command_buffer, &render_pass_begin_info, SubpassContents::INLINE);
                 logical_device.cmd_bind_pipeline(*command_buffer, PipelineBindPoint::GRAPHICS, self.value.pipeline);
 
                 logical_device.cmd_bind_vertex_buffers(*command_buffer, 0, &[self.value.vertex_buffer], &[0]);
-                logical_device.cmd_draw(*command_buffer, VERTICES.len() as u32, 1, 0, 0);
+                logical_device.cmd_bind_index_buffer(*command_buffer, self.value.index_buffer, 0, IndexType::UINT16);
+                logical_device.cmd_draw_indexed(*command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 
                 logical_device.cmd_end_render_pass(*command_buffer);
                 logical_device.end_command_buffer(*command_buffer).unwrap();
             }
-
         }
 
         self.value.command_buffers = command_buffers;
@@ -370,29 +386,28 @@ impl<'a> PipelineDataBuilder<'a> {
     fn create_vertex_buffer(&mut self) {
         let logical_device = self.logical_device.unwrap();
 
-        let buffer_info = BufferCreateInfo::builder()
-            .size((size_of::<Vertex>() * VERTICES.len()) as u64)
-            .usage(BufferUsageFlags::VERTEX_BUFFER)
-            .sharing_mode(SharingMode::EXCLUSIVE)
-            .flags(BufferCreateFlags::empty())
-            ;
+        let size = (size_of::<Vertex>() * VERTICES.len()) as u64;
+        let (staging_buffer, staging_buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_SRC, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
 
-        self.value.vertex_buffer = unsafe { logical_device.create_buffer(&buffer_info, None) }.unwrap();
+        unsafe { logical_device.bind_buffer_memory(staging_buffer, staging_buffer_memory, 0) }.unwrap();
 
-        let requirements = unsafe { logical_device.get_buffer_memory_requirements(self.value.vertex_buffer) };
-        let memory_info = MemoryAllocateInfo::builder()
-            .allocation_size(requirements.size)
-            .memory_type_index(self.get_memory_type_index(MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE, requirements).unwrap())
-            ;
-
-        self.value.vertex_buffer_memory = unsafe { logical_device.allocate_memory(&memory_info, None) }.unwrap();
-        unsafe { logical_device.bind_buffer_memory(self.value.vertex_buffer, self.value.vertex_buffer_memory, 0) }.unwrap();
-
-        let app_memory = unsafe { logical_device.map_memory(self.value.vertex_buffer_memory, 0, buffer_info.size, MemoryMapFlags::empty()) }.unwrap();
+        let app_memory = unsafe { logical_device.map_memory(staging_buffer_memory, 0, size, MemoryMapFlags::empty()) }.unwrap();
 
         unsafe {
             copy_nonoverlapping(VERTICES.as_ptr(), app_memory.cast(), VERTICES.len());
-            logical_device.unmap_memory(self.value.vertex_buffer_memory);
+            logical_device.unmap_memory(staging_buffer_memory);
+        }
+
+        let (buffer, buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::VERTEX_BUFFER, MemoryPropertyFlags::DEVICE_LOCAL).unwrap();
+
+        self.value.vertex_buffer = buffer;
+        self.value.vertex_buffer_memory = buffer_memory;
+
+        self.copy_buffer(staging_buffer, self.value.vertex_buffer, size);
+
+        unsafe {
+            logical_device.destroy_buffer(staging_buffer, None);
+            logical_device.free_memory(staging_buffer_memory, None);
         }
     }
 
@@ -409,5 +424,89 @@ impl<'a> PipelineDataBuilder<'a> {
                 suitable && memory_type.property_flags.contains(properties)
             })
             .ok_or_else(|| anyhow!("Failed to find suitable memory type"))
+    }
+
+    fn create_buffer(&self, size: DeviceSize, usage: BufferUsageFlags, properties: MemoryPropertyFlags) -> anyhow::Result<(Buffer, DeviceMemory)> {
+        let logical_device = self.logical_device.unwrap();
+
+        let buffer_info = BufferCreateInfo::builder()
+            .size(size)
+            .usage(usage)
+            .sharing_mode(SharingMode::EXCLUSIVE)
+        ;
+
+        let buffer = unsafe { logical_device.create_buffer(&buffer_info, None) }?;
+        let requirements = unsafe { logical_device.get_buffer_memory_requirements(buffer) };
+
+        let memory_info = MemoryAllocateInfo::builder()
+            .allocation_size(requirements.size)
+            .memory_type_index(self.get_memory_type_index(properties, requirements).unwrap());
+
+        let buffer_memory = unsafe { logical_device.allocate_memory(&memory_info, None) }?;
+
+        unsafe { logical_device.bind_buffer_memory(buffer, buffer_memory, 0) }.unwrap();
+
+        Ok((buffer, buffer_memory))
+    }
+
+    fn copy_buffer(&self, src: Buffer, dst: Buffer, size: DeviceSize) {
+        let logical_device = self.logical_device.unwrap();
+
+        let info = CommandBufferAllocateInfo::builder()
+            .level(CommandBufferLevel::PRIMARY)
+            .command_pool(self.value.command_pool)
+            .command_buffer_count(1)
+        ;
+
+            let command_buffer = unsafe { logical_device.allocate_command_buffers(&info) }.unwrap()[0];
+            let begin_info = CommandBufferBeginInfo::builder()
+                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe { logical_device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
+
+            let regions = BufferCopy::builder().size(size);
+        unsafe { logical_device.cmd_copy_buffer(command_buffer, src, dst, &[regions]); }
+
+        unsafe { logical_device.end_command_buffer(command_buffer) }.unwrap();
+
+            let command_buffers = &[command_buffer];
+            let info = SubmitInfo::builder()
+                .command_buffers(command_buffers)
+            ;
+
+        unsafe { logical_device.queue_submit(self.graphics_queue, &[info], Fence::null()) }.unwrap();
+        unsafe { logical_device.queue_wait_idle(self.graphics_queue)}.unwrap();
+
+        unsafe { logical_device.free_command_buffers(self.value.command_pool, &[command_buffer]); }
+    }
+
+    //Index buffer
+    //ToDo: Unify with Vertex buffer creation
+    fn create_index_buffer(&mut self) {
+        let logical_device = self.logical_device.unwrap();
+
+        let size = (size_of::<u16>() * INDICES.len()) as u64;
+        let (staging_buffer, staging_buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_SRC, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+
+        unsafe { logical_device.bind_buffer_memory(staging_buffer, staging_buffer_memory, 0) }.unwrap();
+
+        let app_memory = unsafe { logical_device.map_memory(staging_buffer_memory, 0, size, MemoryMapFlags::empty()) }.unwrap();
+
+        unsafe {
+            copy_nonoverlapping(INDICES.as_ptr(), app_memory.cast(), INDICES.len());
+            logical_device.unmap_memory(staging_buffer_memory);
+        }
+
+        let (buffer, buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::INDEX_BUFFER, MemoryPropertyFlags::DEVICE_LOCAL).unwrap();
+
+        self.value.index_buffer = buffer;
+        self.value.index_buffer_memory = buffer_memory;
+
+        self.copy_buffer(staging_buffer, self.value.index_buffer, size);
+
+        unsafe {
+            logical_device.destroy_buffer(staging_buffer, None);
+            logical_device.free_memory(staging_buffer_memory, None);
+        }
     }
 }
