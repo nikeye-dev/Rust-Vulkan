@@ -1,0 +1,7 @@
+{
+  "graphics" : {
+      "vulkan": {
+        "log_level": 1
+      }
+    }
+}
