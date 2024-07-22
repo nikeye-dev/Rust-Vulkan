@@ -9,3 +9,11 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 
 ### Future Plans:
 - Add DirectX support
+
+
+## Target Final Result:
+Similar to my Unreal Engine atmosphere shader rendering:
+
+https://youtu.be/peFjl_cbdZk
+
+https://youtu.be/hIW3IUAkZFs
