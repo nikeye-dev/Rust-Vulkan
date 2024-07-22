@@ -1,11 +1,13 @@
+use std::fmt::Debug;
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
 
 use anyhow::anyhow;
 use vulkanalia::{Device, Instance};
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CullModeFlags, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport};
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
 use winit::window::Window;
+use crate::graphics::vulkan::transform::Transformation;
 
 use crate::graphics::vulkan::vertex::Vertex;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
@@ -28,6 +30,15 @@ pub struct PipelineData {
     //ToDo: Move
     pub(crate) index_buffer: Buffer,
     pub(crate) index_buffer_memory: DeviceMemory,
+
+    //ToDo: Move
+    pub(crate) descriptor_set_layout: DescriptorSetLayout,
+
+    pub(crate) uniform_buffers: Vec<Buffer>,
+    pub(crate) uniform_buffers_memory: Vec<DeviceMemory>,
+
+    pub(crate) descriptor_pool: DescriptorPool,
+    pub(crate) descriptor_sets: Vec<DescriptorSet>,
 }
 
 impl LogicalDeviceDestroy for PipelineData {
@@ -49,6 +60,18 @@ impl LogicalDeviceDestroy for PipelineData {
 
            logical_device.destroy_buffer(self.vertex_buffer, None);
            logical_device.free_memory(self.vertex_buffer_memory, None);
+
+           logical_device.destroy_descriptor_pool(self.descriptor_pool, None);
+
+           logical_device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+
+           for i in 0..self.uniform_buffers.len() {
+               logical_device.destroy_buffer(self.uniform_buffers[i], None);
+               logical_device.free_memory(self.uniform_buffers_memory[i], None);
+           }
+
+           self.uniform_buffers.clear();
+           self.uniform_buffers_memory.clear();
        }
    }
 }
@@ -109,11 +132,16 @@ impl<'a> PipelineDataBuilder<'a> {
         assert!(self.swapchain_data.is_some());
         assert!(!self.graphics_queue.is_null());
 
+        self.create_descriptor_set_layout();
         self.create_pipeline();
         self.create_framebuffers();
         self.create_command_pool();
+
         self.create_vertex_buffer();
         self.create_index_buffer();
+        self.create_uniform_buffers();
+        self.create_descriptor_pool();
+        self.create_descriptor_sets();
         self.create_command_buffers();
 
         Ok(take(&mut self.value))
@@ -179,7 +207,7 @@ impl<'a> PipelineDataBuilder<'a> {
             .polygon_mode(PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(CullModeFlags::BACK)
-            .front_face(FrontFace::CLOCKWISE)
+            .front_face(FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             ;
 
@@ -209,7 +237,11 @@ impl<'a> PipelineDataBuilder<'a> {
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             ;
 
-        let layout_info = PipelineLayoutCreateInfo::builder();
+        let layouts = &[self.value.descriptor_set_layout];
+        let layout_info = PipelineLayoutCreateInfo::builder()
+                .set_layouts(layouts)
+            ;
+
         self.value.pipeline_layout = unsafe { logical_device.create_pipeline_layout(&layout_info, None) }.unwrap();
 
         self.create_render_pass();
@@ -372,6 +404,9 @@ impl<'a> PipelineDataBuilder<'a> {
 
                 logical_device.cmd_bind_vertex_buffers(*command_buffer, 0, &[self.value.vertex_buffer], &[0]);
                 logical_device.cmd_bind_index_buffer(*command_buffer, self.value.index_buffer, 0, IndexType::UINT16);
+
+                logical_device.cmd_bind_descriptor_sets(*command_buffer, PipelineBindPoint::GRAPHICS, self.value.pipeline_layout, 0, &[self.value.descriptor_sets[i]], &[]);
+
                 logical_device.cmd_draw_indexed(*command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 
                 logical_device.cmd_end_render_pass(*command_buffer);
@@ -507,6 +542,90 @@ impl<'a> PipelineDataBuilder<'a> {
         unsafe {
             logical_device.destroy_buffer(staging_buffer, None);
             logical_device.free_memory(staging_buffer_memory, None);
+        }
+    }
+
+    //Uniform Buffers
+    fn create_descriptor_set_layout(&mut self) {
+        let ubo_binding = DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(ShaderStageFlags::VERTEX);
+
+        let bindings = &[ubo_binding];
+        let info = DescriptorSetLayoutCreateInfo::builder()
+            .bindings(bindings)
+        ;
+
+        self.value.descriptor_set_layout = unsafe { self.logical_device.unwrap().create_descriptor_set_layout(&info, None) }.unwrap();
+    }
+
+    fn destroy_uniform_buffers(&mut self) {
+        unsafe {
+            for i in 0..self.value.uniform_buffers.len() {
+                self.logical_device.unwrap().destroy_buffer(self.value.uniform_buffers[i], None);
+                self.logical_device.unwrap().free_memory(self.value.uniform_buffers_memory[i], None);
+            }
+        }
+
+
+        self.value.uniform_buffers.clear();
+        self.value.uniform_buffers_memory.clear();
+    }
+
+    fn create_uniform_buffers(&mut self) {
+        self.destroy_uniform_buffers();
+
+        self.swapchain_data.unwrap().swapchain_images.iter().for_each(|_| {
+            let size = size_of::<Transformation>() as u64;
+            let (uniform_buffer, uniform_buffer_memory) = self.create_buffer(size, BufferUsageFlags::UNIFORM_BUFFER, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+
+            self.value.uniform_buffers.push(uniform_buffer);
+            self.value.uniform_buffers_memory.push(uniform_buffer_memory);
+        });
+    }
+
+    fn create_descriptor_pool(&mut self) {
+        let pool_size = DescriptorPoolSize::builder()
+            .type_(DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(self.swapchain_data.unwrap().swapchain_images.len() as u32)
+        ;
+
+        let pool_sizes = &[pool_size];
+        let info = DescriptorPoolCreateInfo::builder()
+            .pool_sizes(pool_sizes)
+            .max_sets(self.swapchain_data.unwrap().swapchain_images.len() as u32);
+
+        self.value.descriptor_pool = unsafe { self.logical_device.unwrap().create_descriptor_pool(&info, None) }.unwrap();
+    }
+
+    fn create_descriptor_sets(&mut self) {
+        let layouts = vec![self.value.descriptor_set_layout; self.swapchain_data.unwrap().swapchain_images.len()];
+        let info = DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(self.value.descriptor_pool)
+            .set_layouts(&layouts)
+        ;
+
+        self.value.descriptor_sets = unsafe { self.logical_device.unwrap().allocate_descriptor_sets(&info) }.unwrap();
+
+        for i in 0..self.swapchain_data.unwrap().swapchain_images.len() {
+            let info = DescriptorBufferInfo::builder()
+                .buffer(self.value.uniform_buffers[i])
+                .offset(0)
+                .range(size_of::<Transformation>() as u64)
+            ;
+
+            let buffer_infos = &[info];
+            let write_info = WriteDescriptorSet::builder()
+                .dst_set(self.value.descriptor_sets[i])
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(buffer_infos)
+            ;
+
+            unsafe { self.logical_device.unwrap().update_descriptor_sets(&[write_info], &[] as &[CopyDescriptorSet]) }
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::error::EventLoopError;
 use winit::event::WindowEvent;
@@ -12,7 +13,8 @@ use crate::graphics::vulkan::vulkan_api::VulkanApi;
 pub struct App {
     config: Config,
     window: Option<Window>,
-    graphics: Option<VulkanApi>
+    graphics: Option<VulkanApi>,
+    start_time: Instant
 }
 
 impl ApplicationHandler for App {
@@ -70,7 +72,7 @@ impl ApplicationHandler for App {
 
 impl App {
     pub(crate) fn new(config: Config) -> Self {
-        Self { config, window: None, graphics: None }
+        Self { config, window: None, graphics: None, start_time: Instant::now() }
     }
 
     pub(crate) fn run(&mut self) -> Result<(), EventLoopError> {
@@ -81,7 +83,7 @@ impl App {
 
     fn render(&mut self) -> Result<()> {
         if self.graphics.is_some() {
-            return self.graphics.as_mut().unwrap().render(self.window.as_ref().unwrap());
+            return self.graphics.as_mut().unwrap().render(self.window.as_ref().unwrap(), self.start_time);
         }
 
         Ok(())

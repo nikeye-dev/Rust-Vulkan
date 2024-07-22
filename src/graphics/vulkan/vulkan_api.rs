@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
+use cgmath::{Deg, perspective, point3};
 use log::{info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
@@ -13,7 +15,8 @@ use winit::window::Window;
 
 use crate::config::config::{GraphicsConfig, LogLevel};
 use crate::graphics::graphics_api::GraphicsApi;
-use crate::graphics::vulkan::vertex::Vertex;
+use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
+use crate::graphics::vulkan::vertex::{Vector3, Vertex};
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
@@ -35,7 +38,7 @@ impl GraphicsApi for VulkanApi {
         todo!()
     }
 
-    fn render(&mut self, window: &Window) -> Result<()> {
+    fn render(&mut self, window: &Window, start_time: Instant) -> Result<()> {
         let fence = self.data.sync_objects.in_flight_fences[self.frame_index];
 
         unsafe {
@@ -59,6 +62,8 @@ impl GraphicsApi for VulkanApi {
         }
 
         self.data.sync_objects.set_image_fence(image_index as usize, fence);
+
+        self.update_uniform_buffers(image_index as usize, start_time);
 
         let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -385,6 +390,41 @@ impl VulkanApi {
         self.data.sync_objects = SyncObjects::create(&self.data.logical_device, &self.data.swapchain_data, MAX_FRAMES_IN_FLIGHT);
 
         Ok(())
+    }
+
+    //ToDo: Add transforms and move from here
+    fn update_uniform_buffers(&self, image_index: usize, start_time: Instant) {
+        let time = start_time.elapsed().as_secs_f32();
+
+        //ToDo: reexport cgmath types
+        let model = Matrix4x4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Deg(90.0) * time);
+        let view = Matrix4x4::look_at_rh(
+            point3(2.0, 2.0, 2.0),
+            point3(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 0.0)
+        );
+
+        let mut projection = perspective(Deg(45.0),
+                                     self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
+                                     0.1,
+                                     10.0);
+
+        projection[1][1] *= -1.0;
+
+        let transformation = Transformation::new(model, view, projection);
+        println!("{:?}", transformation);
+
+        unsafe {
+            let memory = self.data.logical_device.map_memory(
+                self.data.pipeline_data.uniform_buffers_memory[image_index],
+                0,
+                size_of::<Transformation>() as u64,
+                MemoryMapFlags::empty())
+                .unwrap();
+
+            copy_nonoverlapping(&transformation, memory.cast(), 1);
+            self.data.logical_device.unmap_memory(self.data.pipeline_data.uniform_buffers_memory[image_index])
+        };
     }
 }
 
