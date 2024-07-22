@@ -1,5 +1,5 @@
 # Vulkan in Rust
-A Rust and Vulkan API upskilling project. 
+A WIP Rust and Vulkan API upskilling project. 
 The main idea behind this project is to learn Vulkan API and Rust together, based on available tutorial, while also refactoring and extending the project in a way I see being better.
 
 ## Planned:
