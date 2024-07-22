@@ -6,3 +6,6 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 - Complete Vulkan tutorial up to uniform buffers and depth sorting
 - Refactor the project to seggregate responsibilities better, reduce code size per file, make parts of it reusable and easily extensible.
 - Introduce HLSL shaders and port my own Unreal Rayleigh scattering shaders to this implementation
+
+### Future Plans:
+- Add DirectX support
