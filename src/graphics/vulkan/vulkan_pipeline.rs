@@ -1,15 +1,19 @@
 use std::fmt::Debug;
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
+use std::ptr::slice_from_raw_parts;
+use std::slice;
 
 use anyhow::anyhow;
+use cgmath::Deg;
 use vulkanalia::{Device, Instance};
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
 use winit::window::Window;
-use crate::graphics::vulkan::transform::Transformation;
+use crate::graphics::vulkan::push_constants::PushConstants;
+use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
 
-use crate::graphics::vulkan::vertex::Vertex;
+use crate::graphics::vulkan::vertex::{Vector3, Vertex};
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
 use crate::graphics::vulkan::vulkan_utils::{INDICES, LogicalDeviceDestroy, QueueFamilyIndices, VERTICES};
 
@@ -237,10 +241,18 @@ impl<'a> PipelineDataBuilder<'a> {
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             ;
 
+        let vert_push_constant_range = PushConstantRange::builder()
+            .stage_flags(ShaderStageFlags::VERTEX)
+            .offset(0)
+            .size(size_of::<PushConstants>() as u32)
+        ;
+
         let layouts = &[self.value.descriptor_set_layout];
+        let push_constant_ranges = &[vert_push_constant_range];
         let layout_info = PipelineLayoutCreateInfo::builder()
-                .set_layouts(layouts)
-            ;
+            .set_layouts(layouts)
+            .push_constant_ranges(push_constant_ranges)
+        ;
 
         self.value.pipeline_layout = unsafe { logical_device.create_pipeline_layout(&layout_info, None) }.unwrap();
 
@@ -370,6 +382,14 @@ impl<'a> PipelineDataBuilder<'a> {
 
         self.value.command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
 
+        //ToDo: Move
+        let model = Matrix4x4::from_axis_angle(
+            Vector3::new(0.0, 0.0, 1.0),
+            Deg(0.0)
+        );
+
+        let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
+
         for (i, command_buffer) in self.value.command_buffers.iter().enumerate() {
             let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
 
@@ -406,6 +426,8 @@ impl<'a> PipelineDataBuilder<'a> {
                 logical_device.cmd_bind_index_buffer(*command_buffer, self.value.index_buffer, 0, IndexType::UINT16);
 
                 logical_device.cmd_bind_descriptor_sets(*command_buffer, PipelineBindPoint::GRAPHICS, self.value.pipeline_layout, 0, &[self.value.descriptor_sets[i]], &[]);
+
+                logical_device.cmd_push_constants(*command_buffer, self.value.pipeline_layout, ShaderStageFlags::VERTEX, 0, model_bytes);
 
                 logical_device.cmd_draw_indexed(*command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 

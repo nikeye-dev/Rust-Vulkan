@@ -394,24 +394,25 @@ impl VulkanApi {
 
     //ToDo: Add transforms and move from here
     fn update_uniform_buffers(&self, image_index: usize, start_time: Instant) {
-        let time = start_time.elapsed().as_secs_f32();
-
-        //ToDo: reexport cgmath types
-        let model = Matrix4x4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Deg(90.0) * time);
         let view = Matrix4x4::look_at_rh(
             point3::<f32>(2.0, 2.0, 2.0),
             point3::<f32>(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0)
         );
 
-        let mut projection = perspective(Deg(45.0),
+        let correction = Matrix4x4::new(
+            1.0,  0.0,       0.0, 0.0,
+            0.0, -1.0,       0.0, 0.0,
+            0.0,  0.0, 1.0 / 2.0, 0.0,
+            0.0,  0.0, 1.0 / 2.0, 1.0,
+        );
+
+        let mut projection = correction * perspective(Deg(45.0),
                                      self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
                                      0.1,
                                      10.0);
 
-        projection[1][1] *= -1.0;
-
-        let transformation = Transformation::new(model, view, projection);
+        let transformation = Transformation::new(view, projection);
 
         unsafe {
             let memory = self.data.logical_device.map_memory(
