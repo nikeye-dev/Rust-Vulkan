@@ -368,9 +368,9 @@ impl<'a> PipelineDataBuilder<'a> {
             .command_buffer_count(self.value.framebuffers.len() as u32)
             ;
 
-        let command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
+        self.value.command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
 
-        for (i, command_buffer) in command_buffers.iter().enumerate() {
+        for (i, command_buffer) in self.value.command_buffers.iter().enumerate() {
             let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
 
             let command_buffer_begin_info = CommandBufferBeginInfo::builder()
@@ -413,8 +413,6 @@ impl<'a> PipelineDataBuilder<'a> {
                 logical_device.end_command_buffer(*command_buffer).unwrap();
             }
         }
-
-        self.value.command_buffers = command_buffers;
     }
 
     //Vertex buffer
@@ -493,9 +491,9 @@ impl<'a> PipelineDataBuilder<'a> {
             .command_buffer_count(1)
         ;
 
-            let command_buffer = unsafe { logical_device.allocate_command_buffers(&info) }.unwrap()[0];
-            let begin_info = CommandBufferBeginInfo::builder()
-                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        let command_buffer = unsafe { logical_device.allocate_command_buffers(&info) }.unwrap()[0];
+        let begin_info = CommandBufferBeginInfo::builder()
+            .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
         unsafe { logical_device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
 
@@ -579,7 +577,8 @@ impl<'a> PipelineDataBuilder<'a> {
 
         self.swapchain_data.unwrap().swapchain_images.iter().for_each(|_| {
             let size = size_of::<Transformation>() as u64;
-            let (uniform_buffer, uniform_buffer_memory) = self.create_buffer(size, BufferUsageFlags::UNIFORM_BUFFER, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+            let (uniform_buffer, uniform_buffer_memory) = self.create_buffer(size, BufferUsageFlags::UNIFORM_BUFFER,
+                                                                             MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
 
             self.value.uniform_buffers.push(uniform_buffer);
             self.value.uniform_buffers_memory.push(uniform_buffer_memory);

@@ -399,9 +399,9 @@ impl VulkanApi {
         //ToDo: reexport cgmath types
         let model = Matrix4x4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Deg(90.0) * time);
         let view = Matrix4x4::look_at_rh(
-            point3(2.0, 2.0, 2.0),
-            point3(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 0.0)
+            point3::<f32>(2.0, 2.0, 2.0),
+            point3::<f32>(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0)
         );
 
         let mut projection = perspective(Deg(45.0),
@@ -412,7 +412,6 @@ impl VulkanApi {
         projection[1][1] *= -1.0;
 
         let transformation = Transformation::new(model, view, projection);
-        println!("{:?}", transformation);
 
         unsafe {
             let memory = self.data.logical_device.map_memory(
