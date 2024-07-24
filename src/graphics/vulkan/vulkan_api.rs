@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
+use std::slice;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
@@ -8,7 +9,7 @@ use cgmath::{Deg, perspective, point3};
 use log::{info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, PhysicalDevice, PhysicalDeviceFeatures, PipelineStageFlags, PresentInfoKHR, Semaphore, SemaphoreCreateInfo, SharingMode, SubmitInfo, SuccessCode, SurfaceKHR};
+use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferResetFlags, CommandBufferUsageFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
 use vulkanalia::window as vk_window;
 use vulkanalia::window::create_surface;
 use winit::window::Window;
@@ -20,9 +21,10 @@ use crate::graphics::vulkan::vertex::{Vector3, Vertex};
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
-use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
+use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
 
 pub struct VulkanApi {
+    start_time: Instant,
     is_destroyed: bool,
     config: GraphicsConfig,
     data: VulkanData,
@@ -38,7 +40,7 @@ impl GraphicsApi for VulkanApi {
         todo!()
     }
 
-    fn render(&mut self, window: &Window, start_time: Instant) -> Result<()> {
+    fn render(&mut self, window: &Window) -> Result<()> {
         let fence = self.data.sync_objects.in_flight_fences[self.frame_index];
 
         unsafe {
@@ -63,7 +65,8 @@ impl GraphicsApi for VulkanApi {
 
         self.data.sync_objects.set_image_fence(image_index as usize, fence);
 
-        self.update_uniform_buffers(image_index as usize, start_time);
+        self.update_command_buffer(image_index as usize);
+        self.update_uniform_buffers(image_index as usize);
 
         let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -118,7 +121,7 @@ impl GraphicsApi for VulkanApi {
 }
 
 impl VulkanApi {
-    pub fn new(window: &Window, config: GraphicsConfig) -> Self {
+    pub fn new(window: &Window, config: GraphicsConfig, app_start_time: Instant) -> Self {
         let loader = unsafe { LibloadingLoader::new(LIBRARY) }.unwrap();
         let entry = unsafe { Entry::new(loader) }.unwrap();
         let instance = Self::create_instance(window, &entry, &config).unwrap();
@@ -188,6 +191,7 @@ impl VulkanApi {
         };
 
         Self {
+            start_time: app_start_time,
             is_destroyed: false,
             config,
             data,
@@ -393,21 +397,14 @@ impl VulkanApi {
     }
 
     //ToDo: Add transforms and move from here
-    fn update_uniform_buffers(&self, image_index: usize, start_time: Instant) {
+    fn update_uniform_buffers(&self, image_index: usize) {
         let view = Matrix4x4::look_at_rh(
             point3::<f32>(2.0, 2.0, 2.0),
             point3::<f32>(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0)
         );
 
-        let correction = Matrix4x4::new(
-            1.0,  0.0,       0.0, 0.0,
-            0.0, -1.0,       0.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 1.0,
-        );
-
-        let mut projection = correction * perspective(Deg(45.0),
+        let projection = PERSPECTIVE_CORRECTION * perspective(Deg(45.0),
                                      self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
                                      0.1,
                                      10.0);
@@ -425,6 +422,67 @@ impl VulkanApi {
             copy_nonoverlapping(&transformation, memory.cast(), 1);
             self.data.logical_device.unmap_memory(self.data.pipeline_data.uniform_buffers_memory[image_index])
         };
+    }
+
+    fn update_command_buffer(&mut self, image_index: usize) {
+        let time = self.start_time.elapsed().as_secs_f32();
+        let command_buffer = self.data.pipeline_data.command_buffers[image_index];
+
+        unsafe { self.data.logical_device.reset_command_buffer(command_buffer, CommandBufferResetFlags::empty()) }.unwrap();
+
+        //ToDo: Move
+        let model = Matrix4x4::from_axis_angle(
+            Vector3::new(0.0, 0.0, 1.0),
+            Deg(90.0) * time
+        );
+
+        let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
+
+        let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
+
+        let command_buffer_begin_info = CommandBufferBeginInfo::builder()
+            .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT) // Optional.
+            .inheritance_info(&command_buffer_inheritance_info);             // Optional.
+
+        let logical_device = &self.data.logical_device;
+
+        unsafe { logical_device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
+
+        let render_area = Rect2D::builder()
+            .extent(self.data.swapchain_data.swapchain_extent)
+            .offset(Offset2D::default())
+            ;
+
+        let color_clear_value = ClearValue {
+            color: ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0]
+            }
+        };
+
+        let clear_values = &[color_clear_value];
+        let render_pass_begin_info = RenderPassBeginInfo::builder()
+            .render_pass(self.data.pipeline_data.render_pass)
+            .framebuffer(self.data.pipeline_data.framebuffers[image_index])
+            .render_area(render_area)
+            .clear_values(clear_values)
+            ;
+
+        unsafe {
+            logical_device.cmd_begin_render_pass(command_buffer, &render_pass_begin_info, SubpassContents::INLINE);
+            logical_device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::GRAPHICS, self.data.pipeline_data.pipeline);
+
+            logical_device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.data.pipeline_data.vertex_buffer], &[0]);
+            logical_device.cmd_bind_index_buffer(command_buffer, self.data.pipeline_data.index_buffer, 0, IndexType::UINT16);
+
+            logical_device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::GRAPHICS, self.data.pipeline_data.pipeline_layout, 0, &[self.data.pipeline_data.descriptor_sets[image_index]], &[]);
+
+            logical_device.cmd_push_constants(command_buffer, self.data.pipeline_data.pipeline_layout, ShaderStageFlags::VERTEX, 0, model_bytes);
+
+            logical_device.cmd_draw_indexed(command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
+
+            logical_device.cmd_end_render_pass(command_buffer);
+            logical_device.end_command_buffer(command_buffer).unwrap();
+        }
     }
 }
 

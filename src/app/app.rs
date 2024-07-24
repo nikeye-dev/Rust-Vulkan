@@ -26,7 +26,7 @@ impl ApplicationHandler for App {
 
         if self.graphics.is_none() {
             info!("Creating graphics...");
-            let mut api = VulkanApi::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap());
+            let mut api = VulkanApi::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap(), self.start_time);
             api.initialize().unwrap();
 
             self.graphics = Some(api);
@@ -83,7 +83,7 @@ impl App {
 
     fn render(&mut self) -> Result<()> {
         if self.graphics.is_some() {
-            return self.graphics.as_mut().unwrap().render(self.window.as_ref().unwrap(), self.start_time);
+            return self.graphics.as_mut().unwrap().render(self.window.as_ref().unwrap());
         }
 
         Ok(())

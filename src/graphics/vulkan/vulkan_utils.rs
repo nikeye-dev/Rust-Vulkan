@@ -5,6 +5,7 @@ use log::{debug, error, trace, warn};
 use thiserror::Error;
 use vulkanalia::{Device, Instance, Version, vk};
 use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
+use crate::graphics::vulkan::transform::Matrix4x4;
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
 
 pub(crate) const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
@@ -31,6 +32,13 @@ pub static VERTICES: [Vertex; 4] = [
 ];
 
 pub static INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
+
+pub static PERSPECTIVE_CORRECTION: Matrix4x4 = Matrix4x4::new(
+    1.0,  0.0,       0.0, 0.0,
+    0.0, -1.0,       0.0, 0.0,
+    0.0,  0.0, 1.0 / 2.0, 0.0,
+    0.0,  0.0, 1.0 / 2.0, 1.0,
+);
 
 pub extern "system" fn debug_callback(severity: vk::DebugUtilsMessageSeverityFlagsEXT, message_type: vk::DebugUtilsMessageTypeFlagsEXT,
                                   data: *const vk::DebugUtilsMessengerCallbackDataEXT, _: *mut c_void)

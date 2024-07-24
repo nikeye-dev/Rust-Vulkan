@@ -381,60 +381,6 @@ impl<'a> PipelineDataBuilder<'a> {
             ;
 
         self.value.command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
-
-        //ToDo: Move
-        let model = Matrix4x4::from_axis_angle(
-            Vector3::new(0.0, 0.0, 1.0),
-            Deg(0.0)
-        );
-
-        let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
-
-        for (i, command_buffer) in self.value.command_buffers.iter().enumerate() {
-            let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
-
-            let command_buffer_begin_info = CommandBufferBeginInfo::builder()
-                .flags(CommandBufferUsageFlags::empty()) // Optional.
-                .inheritance_info(&command_buffer_inheritance_info);             // Optional.
-
-            unsafe { logical_device.begin_command_buffer(*command_buffer, &command_buffer_begin_info) }.unwrap();
-
-            let render_area = Rect2D::builder()
-                .extent(self.swapchain_data.unwrap().swapchain_extent)
-                .offset(Offset2D::default())
-                ;
-
-            let color_clear_value = ClearValue {
-                color: ClearColorValue {
-                    float32: [0.0, 0.0, 0.0, 1.0]
-                }
-            };
-
-            let clear_values = &[color_clear_value];
-            let render_pass_begin_info = RenderPassBeginInfo::builder()
-                .render_pass(self.value.render_pass)
-                .framebuffer(self.value.framebuffers[i])
-                .render_area(render_area)
-                .clear_values(clear_values)
-                ;
-
-            unsafe {
-                logical_device.cmd_begin_render_pass(*command_buffer, &render_pass_begin_info, SubpassContents::INLINE);
-                logical_device.cmd_bind_pipeline(*command_buffer, PipelineBindPoint::GRAPHICS, self.value.pipeline);
-
-                logical_device.cmd_bind_vertex_buffers(*command_buffer, 0, &[self.value.vertex_buffer], &[0]);
-                logical_device.cmd_bind_index_buffer(*command_buffer, self.value.index_buffer, 0, IndexType::UINT16);
-
-                logical_device.cmd_bind_descriptor_sets(*command_buffer, PipelineBindPoint::GRAPHICS, self.value.pipeline_layout, 0, &[self.value.descriptor_sets[i]], &[]);
-
-                logical_device.cmd_push_constants(*command_buffer, self.value.pipeline_layout, ShaderStageFlags::VERTEX, 0, model_bytes);
-
-                logical_device.cmd_draw_indexed(*command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
-
-                logical_device.cmd_end_render_pass(*command_buffer);
-                logical_device.end_command_buffer(*command_buffer).unwrap();
-            }
-        }
     }
 
     //Vertex buffer
