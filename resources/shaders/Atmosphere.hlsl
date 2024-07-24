@@ -1,14 +1,23 @@
-#include "/Engine/Private/Common.ush"
-
+#define PI 3.1415926535897932
 #define CM_TO_SKY_UNIT 0.00001f
+
+struct ViewState
+{
+	float3 WorldCameraOrigin;
+
+	float3 AtmosphereLightDirection;
+	float3 AtmosphereLightIlluminanceOuterSpace;
+};
+
+uniform ViewState ResolvedView;
 
 struct FSampleData
 {
 	float3 PlanetPos;
 	float PlanetRadius;
 	float AtmosphereThickness;
-	fixed SampleCount;
-	fixed SampleCountLight;
+	half SampleCount;
+	half SampleCountLight;
 	float Scale;
 
 	float3 LightDir;
@@ -47,15 +56,42 @@ struct FAtmosphere
 	FSampleData Sample;
 	FMedium Medium;
 
+	float3 SingleScattering(const float3 WorldPos, float3 ViewPos);
+
+	float2 RayIntersectSphere(float3 RayOrigin, float3 RayDirection, float4 Sphere)
+	{
+		float3 LocalPosition = RayOrigin - Sphere.xyz;
+		float LocalPositionSqr = dot(LocalPosition, LocalPosition);
+
+		float3 QuadraticCoef;
+		QuadraticCoef.x = dot(RayDirection, RayDirection);
+		QuadraticCoef.y = 2 * dot(RayDirection, LocalPosition);
+		QuadraticCoef.z = LocalPositionSqr - Sphere.w * Sphere.w;
+
+		float Discriminant = QuadraticCoef.y * QuadraticCoef.y - 4 * QuadraticCoef.x * QuadraticCoef.z;
+
+		float2 Intersections = -1;
+
+		// Only continue if the ray intersects the sphere
+		if (Discriminant >= 0)
+		{
+			float SqrtDiscriminant = sqrt(Discriminant);
+			Intersections = (-QuadraticCoef.y + float2(-1, 1) * SqrtDiscriminant) / (2 * QuadraticCoef.x);
+		}
+
+		return Intersections;
+	}
+
 	// Theta - angle between light direction and view direction
 	float PhaseRayleigh(const float CosTheta)
 	{
 		return (3.0f / (16.0f * PI)) * (1.0f + CosTheta * CosTheta);
 	}
 
+	//ToDo: This is redundant when we have input struct outside Unreal
 	float3 Render(const float3 WorldPos, const float3 PlanetPos,
 		const float PlanetRadius, const float AtmosphereThickness,
-		const fixed SampleCount, const fixed SampleCountLight,
+		const half SampleCount, const half SampleCountLight,
 		const float ScaleHeightRay, const float3 ScatteringRay,
 		const float UnitScale = 1.0f)
 	{
@@ -67,13 +103,13 @@ struct FAtmosphere
 		Sample.SampleCount = SampleCount;
 		Sample.SampleCountLight = SampleCountLight;
 
-		Sample.LightDir = ResolvedView.AtmosphereLightDirection[0].xyz;
-		Sample.LightIntensity = ResolvedView.AtmosphereLightIlluminanceOuterSpace[0].rgb;
+		Sample.LightDir = ResolvedView.AtmosphereLightDirection.xyz;
+		Sample.LightIntensity = ResolvedView.AtmosphereLightIlluminanceOuterSpace.rgb;
 
 		Medium.ScaleHeightR = ScaleHeightRay;
 		Medium.InitCoefficients(ScatteringRay);
 		
-		return SingleScattering(WorldPos, LWCToFloat(ResolvedView.WorldCameraOrigin));
+		return SingleScattering(WorldPos, ResolvedView.WorldCameraOrigin);
 	}
 
 	float3 SingleScattering(const float3 WorldPos, float3 ViewPos)
@@ -160,4 +196,27 @@ struct FAtmosphere
 	
 };
 
-FAtmosphere Atmosphere;
+struct PS_OUTPUT
+{
+    float4 Color[4] : COLOR0;
+};
+
+PS_OUTPUT main()
+{
+	PS_OUTPUT result;
+
+	//tmp
+	float3 WorldPos = float3(0, 0, 0);
+	float3 PlanetPos = float3(0, 0, 0);
+	float PlanetRadius = 100;
+	float AtmosphereThickness = 1;
+	half SampleCount = 5;
+	half SampleCountLight = 5;
+	float ScaleHeightRay = 10;
+	float ScatteringRay = float3(0.5, 0.5, 0.5);
+
+	FAtmosphere atmosphere;
+	result.Color = float4(atmosphere.Render(WorldPos, PlanetPos, PlanetRadius, AtmosphereThickness, SampleCount, SampleCountLight, ScaleHeightRay, ScatteringRay), 1.0);
+
+	return result;
+}
