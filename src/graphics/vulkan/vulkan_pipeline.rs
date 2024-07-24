@@ -24,8 +24,10 @@ pub struct PipelineData {
     pub(crate) pipeline: Pipeline,
     pub(crate) framebuffers: Vec<Framebuffer>,
 
-    pub(crate) command_pool: CommandPool,
-    pub(crate) command_buffers: Vec<CommandBuffer>,
+    pub(crate) global_command_pool: CommandPool,
+
+    pub(crate) command_pools: Vec<CommandPool>,
+    pub(crate) command_buffers: Vec<Vec<CommandBuffer>>,
 
     //ToDo: Move
     pub(crate) vertex_buffer: Buffer,
@@ -48,8 +50,12 @@ pub struct PipelineData {
 impl LogicalDeviceDestroy for PipelineData {
    fn destroy(&mut self, logical_device: &Device) {
        unsafe {
-           logical_device.free_command_buffers(self.command_pool, &self.command_buffers);
-           logical_device.destroy_command_pool(self.command_pool, None);
+           self.command_buffers.iter().enumerate().for_each(|(i, buffers)| {
+               logical_device.free_command_buffers(self.command_pools[i], &buffers);
+           });
+
+           self.command_pools.iter().for_each(|p| logical_device.destroy_command_pool(*p, None));
+           logical_device.destroy_command_pool(self.global_command_pool, None);
 
            self.framebuffers
                .iter()
@@ -139,7 +145,7 @@ impl<'a> PipelineDataBuilder<'a> {
         self.create_descriptor_set_layout();
         self.create_pipeline();
         self.create_framebuffers();
-        self.create_command_pool();
+        self.create_command_pools();
 
         self.create_vertex_buffer();
         self.create_index_buffer();
@@ -360,27 +366,39 @@ impl<'a> PipelineDataBuilder<'a> {
         self.value.framebuffers = framebuffers;
     }
 
-    fn create_command_pool(&mut self) {
+    fn create_command_pool(&self) -> CommandPool {
         let indices = QueueFamilyIndices::get(self.instance.unwrap(), self.physical_device, self.surface).unwrap();
 
         let create_info = CommandPoolCreateInfo::builder()
             .queue_family_index(indices.graphics)
-            .flags(CommandPoolCreateFlags::empty())
+            .flags(CommandPoolCreateFlags::TRANSIENT)
             ;
 
-        self.value.command_pool = unsafe { self.logical_device.unwrap().create_command_pool(&create_info, None) }.unwrap();
+        unsafe { self.logical_device.unwrap().create_command_pool(&create_info, None) }.unwrap()
+    }
+
+    fn create_command_pools(&mut self) {
+        self.value.global_command_pool = self.create_command_pool();
+
+        for _ in 0..self.swapchain_data.unwrap().swapchain_images.len() {
+            let command_pool = self.create_command_pool();
+            self.value.command_pools.push(command_pool);
+        }
     }
 
     fn create_command_buffers(&mut self) {
         let logical_device = self.logical_device.unwrap();
 
-        let allocate_info = CommandBufferAllocateInfo::builder()
-            .level(CommandBufferLevel::PRIMARY)
-            .command_pool(self.value.command_pool)
-            .command_buffer_count(self.value.framebuffers.len() as u32)
-            ;
+        for image_index in 0..self.swapchain_data.unwrap().swapchain_images.len() {
+            let allocate_info = CommandBufferAllocateInfo::builder()
+                .level(CommandBufferLevel::PRIMARY)
+                .command_pool(self.value.command_pools[image_index])
+                .command_buffer_count(1)
+                ;
 
-        self.value.command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
+            let command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
+            self.value.command_buffers.push(command_buffers);
+        }
     }
 
     //Vertex buffer
@@ -455,7 +473,7 @@ impl<'a> PipelineDataBuilder<'a> {
 
         let info = CommandBufferAllocateInfo::builder()
             .level(CommandBufferLevel::PRIMARY)
-            .command_pool(self.value.command_pool)
+            .command_pool(self.value.global_command_pool)
             .command_buffer_count(1)
         ;
 
@@ -478,7 +496,7 @@ impl<'a> PipelineDataBuilder<'a> {
         unsafe { logical_device.queue_submit(self.graphics_queue, &[info], Fence::null()) }.unwrap();
         unsafe { logical_device.queue_wait_idle(self.graphics_queue)}.unwrap();
 
-        unsafe { logical_device.free_command_buffers(self.value.command_pool, &[command_buffer]); }
+        unsafe { logical_device.free_command_buffers(self.value.global_command_pool, &[command_buffer]); }
     }
 
     //Index buffer

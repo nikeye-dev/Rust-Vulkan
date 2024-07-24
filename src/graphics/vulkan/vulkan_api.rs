@@ -9,7 +9,7 @@ use cgmath::{Deg, perspective, point3};
 use log::{info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferResetFlags, CommandBufferUsageFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
+use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferResetFlags, CommandBufferUsageFlags, CommandPoolResetFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
 use vulkanalia::window as vk_window;
 use vulkanalia::window::create_surface;
 use winit::window::Window;
@@ -65,12 +65,12 @@ impl GraphicsApi for VulkanApi {
 
         self.data.sync_objects.set_image_fence(image_index as usize, fence);
 
-        self.update_command_buffer(image_index as usize);
+        self.update_command_buffers(image_index as usize);
         self.update_uniform_buffers(image_index as usize);
 
         let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.data.pipeline_data.command_buffers[image_index as usize]];
+        let command_buffers = self.data.pipeline_data.command_buffers.get(image_index as usize).unwrap();
         let signal_semaphores = &[self.data.sync_objects.render_finished_semaphores[self.frame_index]];
         let submit_info = SubmitInfo::builder()
             .command_buffers(command_buffers)
@@ -424,11 +424,18 @@ impl VulkanApi {
         };
     }
 
-    fn update_command_buffer(&mut self, image_index: usize) {
-        let time = self.start_time.elapsed().as_secs_f32();
-        let command_buffer = self.data.pipeline_data.command_buffers[image_index];
+    fn update_command_buffers(&mut self, image_index: usize) {
+        let command_pool = self.data.pipeline_data.command_pools[image_index];
+        unsafe { self.data.logical_device.reset_command_pool(command_pool, CommandPoolResetFlags::empty()) }.unwrap();
 
-        unsafe { self.data.logical_device.reset_command_buffer(command_buffer, CommandBufferResetFlags::empty()) }.unwrap();
+        let command_buffers = self.data.pipeline_data.command_buffers.get(image_index).unwrap();
+        command_buffers.iter().for_each(|command_buffer| {
+            self.update_command_buffer(image_index, *command_buffer);
+        })
+    }
+
+    fn update_command_buffer(&self, image_index: usize, command_buffer: CommandBuffer) {
+        let time = self.start_time.elapsed().as_secs_f32();
 
         //ToDo: Move
         let model = Matrix4x4::from_axis_angle(
