@@ -15,7 +15,7 @@ use vulkanalia::window::create_surface;
 use winit::window::Window;
 
 use crate::config::config::{GraphicsConfig, LogLevel};
-use crate::graphics::graphics_api::GraphicsApi;
+use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
 use crate::graphics::vulkan::vertex::{Vector3, Vertex};
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
@@ -23,7 +23,7 @@ use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
 use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
 
-pub struct VulkanApi {
+pub struct RHIVulkan {
     start_time: Instant,
     is_destroyed: bool,
     config: GraphicsConfig,
@@ -31,7 +31,7 @@ pub struct VulkanApi {
     frame_index: usize,
 }
 
-impl GraphicsApi for VulkanApi {
+impl RHI for RHIVulkan {
 
     fn initialize(&mut self) -> Result<()> {
         Ok(())
@@ -70,7 +70,7 @@ impl GraphicsApi for VulkanApi {
 
         let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = self.data.pipeline_data.command_buffers.get(image_index as usize).unwrap();
+        let command_buffers = &[self.data.pipeline_data.command_buffers[image_index as usize]];
         let signal_semaphores = &[self.data.sync_objects.render_finished_semaphores[self.frame_index]];
         let submit_info = SubmitInfo::builder()
             .command_buffers(command_buffers)
@@ -120,7 +120,7 @@ impl GraphicsApi for VulkanApi {
     }
 }
 
-impl VulkanApi {
+impl RHIVulkan {
     pub fn new(window: &Window, config: GraphicsConfig, app_start_time: Instant) -> Self {
         let loader = unsafe { LibloadingLoader::new(LIBRARY) }.unwrap();
         let entry = unsafe { Entry::new(loader) }.unwrap();
@@ -428,10 +428,8 @@ impl VulkanApi {
         let command_pool = self.data.pipeline_data.command_pools[image_index];
         unsafe { self.data.logical_device.reset_command_pool(command_pool, CommandPoolResetFlags::empty()) }.unwrap();
 
-        let command_buffers = self.data.pipeline_data.command_buffers.get(image_index).unwrap();
-        command_buffers.iter().for_each(|command_buffer| {
-            self.update_command_buffer(image_index, *command_buffer);
-        })
+        let command_buffer = self.data.pipeline_data.command_buffers.get(image_index).unwrap();
+        self.update_command_buffer(image_index, *command_buffer);
     }
 
     fn update_command_buffer(&self, image_index: usize, command_buffer: CommandBuffer) {
@@ -493,7 +491,7 @@ impl VulkanApi {
     }
 }
 
-impl Drop for VulkanApi {
+impl Drop for RHIVulkan {
     fn drop(&mut self) {
         if !self.is_destroyed {
             self.destroy();

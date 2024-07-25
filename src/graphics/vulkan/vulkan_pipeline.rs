@@ -1,19 +1,16 @@
 use std::fmt::Debug;
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
-use std::ptr::slice_from_raw_parts;
-use std::slice;
 
 use anyhow::anyhow;
-use cgmath::Deg;
 use vulkanalia::{Device, Instance};
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, IndexType, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WriteDescriptorSet};
 use winit::window::Window;
-use crate::graphics::vulkan::push_constants::PushConstants;
-use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
 
-use crate::graphics::vulkan::vertex::{Vector3, Vertex};
+use crate::graphics::vulkan::push_constants::PushConstants;
+use crate::graphics::vulkan::transform::Transformation;
+use crate::graphics::vulkan::vertex::Vertex;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
 use crate::graphics::vulkan::vulkan_utils::{INDICES, LogicalDeviceDestroy, QueueFamilyIndices, VERTICES};
 
@@ -27,7 +24,7 @@ pub struct PipelineData {
     pub(crate) global_command_pool: CommandPool,
 
     pub(crate) command_pools: Vec<CommandPool>,
-    pub(crate) command_buffers: Vec<Vec<CommandBuffer>>,
+    pub(crate) command_buffers: Vec<CommandBuffer>,
 
     //ToDo: Move
     pub(crate) vertex_buffer: Buffer,
@@ -50,8 +47,8 @@ pub struct PipelineData {
 impl LogicalDeviceDestroy for PipelineData {
    fn destroy(&mut self, logical_device: &Device) {
        unsafe {
-           self.command_buffers.iter().enumerate().for_each(|(i, buffers)| {
-               logical_device.free_command_buffers(self.command_pools[i], &buffers);
+           self.command_buffers.iter().enumerate().for_each(|(i, buffer)| {
+               logical_device.free_command_buffers(self.command_pools[i], &[*buffer]);
            });
 
            self.command_pools.iter().for_each(|p| logical_device.destroy_command_pool(*p, None));
@@ -397,7 +394,7 @@ impl<'a> PipelineDataBuilder<'a> {
                 ;
 
             let command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
-            self.value.command_buffers.push(command_buffers);
+            self.value.command_buffers.push(command_buffers[0]);
         }
     }
 

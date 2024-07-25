@@ -1,2 +1,2 @@
-pub(crate) mod graphics_api;
+pub(crate) mod rhi;
 pub mod vulkan;

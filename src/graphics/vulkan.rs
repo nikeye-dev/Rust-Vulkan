@@ -1,4 +1,4 @@
-pub mod vulkan_api;
+pub mod vulkan_rhi;
 pub mod vulkan_data;
 pub mod vulkan_utils;
 pub mod vulkan_swapchain;

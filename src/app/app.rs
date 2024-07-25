@@ -7,13 +7,13 @@ use winit::window::{Window, WindowId};
 use anyhow::Result;
 use log::info;
 use crate::config::config::{Config, GraphicsApiType};
-use crate::graphics::graphics_api::GraphicsApi;
-use crate::graphics::vulkan::vulkan_api::VulkanApi;
+use crate::graphics::rhi::RHI;
+use crate::graphics::vulkan::vulkan_rhi::RHIVulkan;
 
 pub struct App {
     config: Config,
     window: Option<Window>,
-    graphics: Option<VulkanApi>,
+    graphics: Option<RHIVulkan>,
     start_time: Instant
 }
 
@@ -26,7 +26,7 @@ impl ApplicationHandler for App {
 
         if self.graphics.is_none() {
             info!("Creating graphics...");
-            let mut api = VulkanApi::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap(), self.start_time);
+            let mut api = RHIVulkan::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap(), self.start_time);
             api.initialize().unwrap();
 
             self.graphics = Some(api);
