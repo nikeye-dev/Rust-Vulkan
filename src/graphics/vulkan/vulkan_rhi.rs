@@ -9,7 +9,7 @@ use cgmath::{Deg, perspective, point3};
 use log::{info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferResetFlags, CommandBufferUsageFlags, CommandPoolResetFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
+use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferResetFlags, CommandBufferUsageFlags, CommandPoolResetFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
 use vulkanalia::window as vk_window;
 use vulkanalia::window::create_surface;
 use winit::window::Window;
@@ -70,7 +70,7 @@ impl RHI for RHIVulkan {
 
         let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.data.pipeline_data.command_buffers[image_index as usize]];
+        let command_buffers = &[self.data.pipeline_data.primary_command_buffers[image_index as usize]];
         let signal_semaphores = &[self.data.sync_objects.render_finished_semaphores[self.frame_index]];
         let submit_info = SubmitInfo::builder()
             .command_buffers(command_buffers)
@@ -428,30 +428,19 @@ impl RHIVulkan {
         let command_pool = self.data.pipeline_data.command_pools[image_index];
         unsafe { self.data.logical_device.reset_command_pool(command_pool, CommandPoolResetFlags::empty()) }.unwrap();
 
-        let command_buffer = self.data.pipeline_data.command_buffers.get(image_index).unwrap();
+        let command_buffer = self.data.pipeline_data.primary_command_buffers.get(image_index).unwrap();
         self.update_command_buffer(image_index, *command_buffer);
     }
 
-    fn update_command_buffer(&self, image_index: usize, command_buffer: CommandBuffer) {
-        let time = self.start_time.elapsed().as_secs_f32();
-
-        //ToDo: Move
-        let model = Matrix4x4::from_axis_angle(
-            Vector3::new(0.0, 0.0, 1.0),
-            Deg(90.0) * time
-        );
-
-        let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
-
+    fn update_command_buffer(&mut self, image_index: usize, command_buffer: CommandBuffer) {
         let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
 
         let command_buffer_begin_info = CommandBufferBeginInfo::builder()
-            .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT) // Optional.
-            .inheritance_info(&command_buffer_inheritance_info);             // Optional.
+            .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+            .inheritance_info(&command_buffer_inheritance_info);
 
         let logical_device = &self.data.logical_device;
 
-        unsafe { logical_device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
 
         let render_area = Rect2D::builder()
             .extent(self.data.swapchain_data.swapchain_extent)
@@ -473,7 +462,49 @@ impl RHIVulkan {
             ;
 
         unsafe {
-            logical_device.cmd_begin_render_pass(command_buffer, &render_pass_begin_info, SubpassContents::INLINE);
+            logical_device.begin_command_buffer(command_buffer, &command_buffer_begin_info).unwrap();
+            logical_device.cmd_begin_render_pass(command_buffer, &render_pass_begin_info, SubpassContents::SECONDARY_COMMAND_BUFFERS);
+        }
+
+        let secondary_command_buffer = self.data.pipeline_data.get_or_allocate_secondary_buffer(image_index, 0, &self.data.logical_device);
+        self.update_secondary_command_buffer(secondary_command_buffer, image_index);
+
+        unsafe {
+            logical_device.cmd_execute_commands(command_buffer, &[secondary_command_buffer]);
+
+            logical_device.cmd_end_render_pass(command_buffer);
+            logical_device.end_command_buffer(command_buffer).unwrap();
+        }
+    }
+
+    //ToDo: Make async and parallelize
+    fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) {
+        let time = self.start_time.elapsed().as_secs_f32();
+
+        //ToDo: Move
+        let model = Matrix4x4::from_axis_angle(
+            Vector3::new(0.0, 0.0, 1.0),
+            Deg(90.0) * time
+        );
+
+        let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
+
+        // let command_buffer = self.get_or_add_secondary_buffer(&image_index, buffer_index);
+
+        let inheritance_info = CommandBufferInheritanceInfo::builder()
+            .render_pass(self.data.pipeline_data.render_pass)
+            .subpass(0)
+            .framebuffer(self.data.pipeline_data.framebuffers[image_index])
+            ;
+
+        let info = CommandBufferBeginInfo::builder()
+            .flags(CommandBufferUsageFlags::RENDER_PASS_CONTINUE)
+            .inheritance_info(&inheritance_info)
+            ;
+
+        let logical_device = &self.data.logical_device;
+        unsafe {
+            logical_device.begin_command_buffer(command_buffer, &info).unwrap();
             logical_device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::GRAPHICS, self.data.pipeline_data.pipeline);
 
             logical_device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.data.pipeline_data.vertex_buffer], &[0]);
@@ -485,8 +516,7 @@ impl RHIVulkan {
 
             logical_device.cmd_draw_indexed(command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 
-            logical_device.cmd_end_render_pass(command_buffer);
-            logical_device.end_command_buffer(command_buffer).unwrap();
+            logical_device.end_command_buffer(command_buffer).unwrap()
         }
     }
 }

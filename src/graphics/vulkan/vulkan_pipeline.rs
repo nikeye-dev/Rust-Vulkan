@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt::Debug;
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
@@ -24,7 +25,8 @@ pub struct PipelineData {
     pub(crate) global_command_pool: CommandPool,
 
     pub(crate) command_pools: Vec<CommandPool>,
-    pub(crate) command_buffers: Vec<CommandBuffer>,
+    pub(crate) primary_command_buffers: Vec<CommandBuffer>,
+    pub(crate) secondary_command_buffers: Vec<Vec<CommandBuffer>>,
 
     //ToDo: Move
     pub(crate) vertex_buffer: Buffer,
@@ -44,10 +46,31 @@ pub struct PipelineData {
     pub(crate) descriptor_sets: Vec<DescriptorSet>,
 }
 
+impl PipelineData {
+    pub fn get_or_allocate_secondary_buffer(&mut self, image_index: usize, buffer_index: usize, logical_device: &Device) -> CommandBuffer {
+        self.secondary_command_buffers.resize_with(image_index + 1, Vec::new);
+        let command_buffers = &mut self.secondary_command_buffers[image_index];
+
+        let new_buffers_count = max(1, buffer_index) - command_buffers.len();
+        if new_buffers_count > 0 {
+            let allocate_info = CommandBufferAllocateInfo::builder()
+                .command_pool(self.command_pools[image_index])
+                .level(CommandBufferLevel::SECONDARY)
+                .command_buffer_count(new_buffers_count as u32);
+
+            let mut new_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
+            command_buffers.append(&mut new_buffers);
+        }
+
+        let command_buffer = command_buffers[buffer_index];
+        command_buffer
+    }
+}
+
 impl LogicalDeviceDestroy for PipelineData {
    fn destroy(&mut self, logical_device: &Device) {
        unsafe {
-           self.command_buffers.iter().enumerate().for_each(|(i, buffer)| {
+           self.primary_command_buffers.iter().enumerate().for_each(|(i, buffer)| {
                logical_device.free_command_buffers(self.command_pools[i], &[*buffer]);
            });
 
@@ -394,8 +417,10 @@ impl<'a> PipelineDataBuilder<'a> {
                 ;
 
             let command_buffers = unsafe { logical_device.allocate_command_buffers(&allocate_info) }.unwrap();
-            self.value.command_buffers.push(command_buffers[0]);
+            self.value.primary_command_buffers.push(command_buffers[0]);
         }
+
+        self.value.secondary_command_buffers = vec![vec![]; self.swapchain_data.unwrap().swapchain_images.len()];
     }
 
     //Vertex buffer
