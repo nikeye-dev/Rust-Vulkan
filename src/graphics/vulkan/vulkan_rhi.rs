@@ -5,8 +5,9 @@ use std::slice;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{Deg, perspective, point3};
-use log::{info, warn};
+use cgmath::{Decomposed, Deg, EuclideanSpace, Euler, InnerSpace, perspective, point3, Quaternion, Rad, Rotation, Transform, vec3, vec4, Zero};
+use cgmath::num_traits::real::Real;
+use log::{debug, info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferResetFlags, CommandBufferUsageFlags, CommandPoolResetFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
@@ -16,8 +17,10 @@ use winit::window::Window;
 
 use crate::config::config::{GraphicsConfig, LogLevel};
 use crate::graphics::rhi::RHI;
+use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
 use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
-use crate::graphics::vulkan::vertex::{Vector3, Vertex};
+use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
+use crate::graphics::vulkan::view_state::ViewState;
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
@@ -263,7 +266,7 @@ impl RHIVulkan {
                 LogLevel::Warning => DebugUtilsMessageSeverityFlagsEXT::WARNING,
                 LogLevel::Error => DebugUtilsMessageSeverityFlagsEXT::ERROR
             };
-
+            println!("Severity: {:?}", severity);
             debug_info.message_severity(severity)
                       .message_type(DebugUtilsMessageTypeFlagsEXT::all())
                       .user_callback(Some(debug_callback));
@@ -398,29 +401,109 @@ impl RHIVulkan {
 
     //ToDo: Add transforms and move from here
     fn update_uniform_buffers(&self, image_index: usize) {
+        // let camera_pos = point3::<f32>(1360081925.0, -248352419.0, 370630079.0);
+        let camera_pos = point3::<f32>(10.0, -95.0, 25.0*2.0);
+        // z - up
+        // y - forward
+        // x - right
+        // let camera_pos = point3::<f32>(0.0, -5.0, 2.0);
+        let look_at = point3::<f32>(0.0, 0.0, 0.0);
         let view = Matrix4x4::look_at_rh(
-            point3::<f32>(2.0, 2.0, 2.0),
-            point3::<f32>(0.0, 0.0, 0.0),
+            camera_pos,
+            look_at,
             Vector3::new(0.0, 0.0, 1.0)
         );
 
         let projection = PERSPECTIVE_CORRECTION * perspective(Deg(45.0),
                                      self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
                                      0.1,
-                                     10.0);
+                                     10000000000.0);
 
         let transformation = Transformation::new(view, projection);
 
         unsafe {
+            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][0];
             let memory = self.data.logical_device.map_memory(
-                self.data.pipeline_data.uniform_buffers_memory[image_index],
+                buffer_memory,
                 0,
                 size_of::<Transformation>() as u64,
                 MemoryMapFlags::empty())
                 .unwrap();
 
             copy_nonoverlapping(&transformation, memory.cast(), 1);
-            self.data.logical_device.unmap_memory(self.data.pipeline_data.uniform_buffers_memory[image_index])
+            self.data.logical_device.unmap_memory(buffer_memory)
+        };
+
+        let light_pos = vec4(0.0f32, 100., 1000., 0.);
+        let light_rot = Quaternion::from(Euler {
+            x: Deg(0.0),
+            y: Deg(45.0),
+            z: Deg(75.0)
+        });
+
+        let light_dir =  light_rot.rotate_vector(Vector3::new(0.0, 1.0, 0.0)).extend(0.0);//(light_pos - Vector4::zero()).normalize();
+        let light_illuminance_outer_space = vec4(1., 1., 1., 1.) * 100.0;
+
+        let view_state = ViewState {
+            world_camera_origin: camera_pos.to_vec().extend(0.0),
+            atmosphere_light_direction: light_dir,
+            atmosphere_light_illuminance_outer_space: light_illuminance_outer_space
+        };
+
+        unsafe {
+            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][1];
+            let memory = self.data.logical_device.map_memory(
+                buffer_memory,
+                0,
+                size_of::<ViewState>() as u64,
+                MemoryMapFlags::empty())
+                .unwrap();
+
+            copy_nonoverlapping(&view_state, memory.cast(), 1);
+            self.data.logical_device.unmap_memory(buffer_memory)
+        };
+
+        let unit_scale = 0.2;
+        let scattering_ray = vec3(0.175287, 0.409607, 1.0);
+        let medium = ScatteringMedium::new(0.2, scattering_ray);
+
+        unsafe {
+            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][2];
+            let memory = self.data.logical_device.map_memory(
+                buffer_memory,
+                0,
+                size_of::<ScatteringMedium>() as u64,
+                MemoryMapFlags::empty())
+                .unwrap();
+
+            copy_nonoverlapping(&medium, memory.cast(), 1);
+            self.data.logical_device.unmap_memory(buffer_memory)
+        };
+
+        let atmospheric_sample_data = AtmosphereSampleData {
+            planet_pos: vec3(0.0, 0.0, 0.0).extend(0.0),
+            planet_radius: 6.3710,
+            atmosphere_thickness: 0.0600,
+            sample_count: 100.0,
+            sample_count_light: 15.0,
+            unit_scale,
+            light_dir,
+            light_intensity: light_illuminance_outer_space,
+
+            pad: [0.0, 0.0, 0.0]
+        };
+
+        unsafe {
+            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][3];
+            let memory = self.data.logical_device.map_memory(
+                buffer_memory,
+                0,
+                size_of::<AtmosphereSampleData>() as u64,
+                MemoryMapFlags::empty())
+                .unwrap();
+
+            copy_nonoverlapping(&atmospheric_sample_data, memory.cast(), 1);
+            self.data.logical_device.unmap_memory(buffer_memory)
         };
     }
 
@@ -481,11 +564,15 @@ impl RHIVulkan {
     fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) {
         let time = self.start_time.elapsed().as_secs_f32();
 
-        //ToDo: Move
-        let model = Matrix4x4::from_axis_angle(
-            Vector3::new(0.0, 0.0, 1.0),
-            Deg(90.0) * time
-        );
+        // ToDo: Move
+        // let model = Matrix4x4::from_axis_angle(
+        //     Vector3::new(0.0, 0.0, 1.0),
+        //     Deg(0.0) * time
+        // );
+        let model = Matrix4x4::from_scale(33.0);
+        // let model = Matrix4x4::from_scale(1.0);
+
+        // let model = Matrix4x4::from_translation(Vector3::new(0.0, 0.0, 0.0));
 
         let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
 

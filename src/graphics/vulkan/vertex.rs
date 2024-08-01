@@ -3,6 +3,10 @@ use vulkanalia::vk::{Format, HasBuilder, VertexInputAttributeDescription, Vertex
 
 pub type Vector2 = cgmath::Vector2<f32>;
 pub type Vector3 = cgmath::Vector3<f32>;
+
+//For uniform buffer data prefer over Vector3.
+//Vector3s are memory aligned as Vector4s in shader but not in C/Rust
+//and alignment needs to be manually padded if Vector3 is used
 pub type Vector4 = cgmath::Vector4<f32>;
 
 #[repr(C)]

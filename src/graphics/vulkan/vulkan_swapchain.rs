@@ -1,4 +1,5 @@
 use std::cmp::min;
+use log::debug;
 use vulkanalia::{Device, Instance, vk};
 use vulkanalia::vk::{ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceV1_0, Extent2D, Format, Handle, HasBuilder, Image, ImageUsageFlags, ImageView, KhrSurfaceExtension, KhrSwapchainExtension, PhysicalDevice, PresentModeKHR, SharingMode, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR};
 use winit::window::Window;
@@ -93,6 +94,8 @@ impl<'a> SwapchainDataBuilder<'a> {
         let extent = Self::get_swapchain_extent(self.window.unwrap(), capabilities);
 
         let image_count = min(capabilities.min_image_count + 1, capabilities.max_image_count);
+
+        debug!("Image count will be: {:?}", image_count);
 
         //Sharing mode between graphics and presentation queue. We rely on them being the same one, so we use Exclusive
         let image_sharing_mode = SharingMode::EXCLUSIVE;

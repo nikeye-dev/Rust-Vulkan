@@ -2,16 +2,20 @@ use std::cmp::max;
 use std::fmt::Debug;
 use std::intrinsics::copy_nonoverlapping;
 use std::mem::{size_of, take};
+use std::rc::Rc;
 
 use anyhow::anyhow;
+use log::debug;
 use vulkanalia::{Device, Instance};
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WriteDescriptorSet};
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet, WriteDescriptorSetBuilder};
 use winit::window::Window;
+use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
 
 use crate::graphics::vulkan::push_constants::PushConstants;
 use crate::graphics::vulkan::transform::Transformation;
 use crate::graphics::vulkan::vertex::Vertex;
+use crate::graphics::vulkan::view_state::ViewState;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
 use crate::graphics::vulkan::vulkan_utils::{INDICES, LogicalDeviceDestroy, QueueFamilyIndices, VERTICES};
 
@@ -39,8 +43,14 @@ pub struct PipelineData {
     //ToDo: Move
     pub(crate) descriptor_set_layout: DescriptorSetLayout,
 
-    pub(crate) uniform_buffers: Vec<Buffer>,
-    pub(crate) uniform_buffers_memory: Vec<DeviceMemory>,
+    /*  Fixed size:
+         0 - transformation
+         1 - viewState
+         2 - atmospheric scattering medium
+         3 - atmospheric scattering sample data
+    */
+    pub(crate) uniform_buffers: Vec<[Buffer; 4]>,
+    pub(crate) uniform_buffers_memory: Vec<[DeviceMemory; 4]>,
 
     pub(crate) descriptor_pool: DescriptorPool,
     pub(crate) descriptor_sets: Vec<DescriptorSet>,
@@ -96,8 +106,10 @@ impl LogicalDeviceDestroy for PipelineData {
            logical_device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
 
            for i in 0..self.uniform_buffers.len() {
-               logical_device.destroy_buffer(self.uniform_buffers[i], None);
-               logical_device.free_memory(self.uniform_buffers_memory[i], None);
+               for j in 0..self.uniform_buffers[i].len() {
+                   logical_device.destroy_buffer(self.uniform_buffers[i][j], None);
+                   logical_device.free_memory(self.uniform_buffers_memory[i][j], None);
+               }
            }
 
            self.uniform_buffers.clear();
@@ -181,10 +193,9 @@ impl<'a> PipelineDataBuilder<'a> {
         let logical_device = self.logical_device.unwrap();
 
         //ToDo: Make dynamic
-        let vert = include_bytes!("../../../resources/shaders/test_vert.spv");
+        let vert = include_bytes!("../../../resources/shaders/FullscreenTriangle_vert.spv");
 
         let vert_module = self.create_shader_module(&vert[..]).unwrap();
-
         let vert_stage = PipelineShaderStageCreateInfo::builder()
             .stage(ShaderStageFlags::VERTEX)
             .module(vert_module)
@@ -198,9 +209,9 @@ impl<'a> PipelineDataBuilder<'a> {
             .vertex_attribute_descriptions(&attribute_descriptions)
             ;
 
-        let frag = include_bytes!("../../../resources/shaders/test_frag.spv");
-        let frag_module = self.create_shader_module(&frag[..]).unwrap();
+        let frag = include_bytes!("../../../resources/shaders/Atmosphere.spv");
 
+        let frag_module = self.create_shader_module(&frag[..]).unwrap();
         let frag_stage = PipelineShaderStageCreateInfo::builder()
             .stage(ShaderStageFlags::FRAGMENT)
             .module(frag_module)
@@ -236,7 +247,7 @@ impl<'a> PipelineDataBuilder<'a> {
             .rasterizer_discard_enable(false)
             .polygon_mode(PolygonMode::FILL)
             .line_width(1.0)
-            .cull_mode(CullModeFlags::BACK)
+            .cull_mode(CullModeFlags::empty())
             .front_face(FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             ;
@@ -251,8 +262,8 @@ impl<'a> PipelineDataBuilder<'a> {
         let color_blend_attachment = PipelineColorBlendAttachmentState::builder()
             .color_write_mask(ColorComponentFlags::all())
             .blend_enable(false)
-            .src_color_blend_factor(BlendFactor::ONE)
-            .dst_color_blend_factor(BlendFactor::ZERO)
+            .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(BlendFactor::ONE)
             .color_blend_op(BlendOp::ADD)
             .src_alpha_blend_factor(BlendFactor::ONE)
             .dst_alpha_blend_factor(BlendFactor::ZERO)
@@ -430,8 +441,6 @@ impl<'a> PipelineDataBuilder<'a> {
         let size = (size_of::<Vertex>() * VERTICES.len()) as u64;
         let (staging_buffer, staging_buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_SRC, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
 
-        unsafe { logical_device.bind_buffer_memory(staging_buffer, staging_buffer_memory, 0) }.unwrap();
-
         let app_memory = unsafe { logical_device.map_memory(staging_buffer_memory, 0, size, MemoryMapFlags::empty()) }.unwrap();
 
         unsafe {
@@ -529,8 +538,6 @@ impl<'a> PipelineDataBuilder<'a> {
         let size = (size_of::<u16>() * INDICES.len()) as u64;
         let (staging_buffer, staging_buffer_memory) = self.create_buffer(size, BufferUsageFlags::TRANSFER_SRC, MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
 
-        unsafe { logical_device.bind_buffer_memory(staging_buffer, staging_buffer_memory, 0) }.unwrap();
-
         let app_memory = unsafe { logical_device.map_memory(staging_buffer_memory, 0, size, MemoryMapFlags::empty()) }.unwrap();
 
         unsafe {
@@ -553,13 +560,31 @@ impl<'a> PipelineDataBuilder<'a> {
 
     //Uniform Buffers
     fn create_descriptor_set_layout(&mut self) {
-        let ubo_binding = DescriptorSetLayoutBinding::builder()
+        let ubo0_binding = DescriptorSetLayoutBinding::builder()
             .binding(0)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
-            .stage_flags(ShaderStageFlags::VERTEX);
+            .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT);
 
-        let bindings = &[ubo_binding];
+        let ubo1_binding = DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT);
+
+        let ubo2_binding = DescriptorSetLayoutBinding::builder()
+            .binding(2)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(ShaderStageFlags::FRAGMENT);
+
+        let ubo3_binding = DescriptorSetLayoutBinding::builder()
+            .binding(3)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(ShaderStageFlags::FRAGMENT);
+
+        let bindings = &[ubo0_binding, ubo1_binding, ubo2_binding, ubo3_binding];
         let info = DescriptorSetLayoutCreateInfo::builder()
             .bindings(bindings)
         ;
@@ -570,11 +595,12 @@ impl<'a> PipelineDataBuilder<'a> {
     fn destroy_uniform_buffers(&mut self) {
         unsafe {
             for i in 0..self.value.uniform_buffers.len() {
-                self.logical_device.unwrap().destroy_buffer(self.value.uniform_buffers[i], None);
-                self.logical_device.unwrap().free_memory(self.value.uniform_buffers_memory[i], None);
+                for j in 0..self.value.uniform_buffers[i].len() {
+                    self.logical_device.unwrap().destroy_buffer(self.value.uniform_buffers[i][j], None);
+                    self.logical_device.unwrap().free_memory(self.value.uniform_buffers_memory[i][j], None);
+                }
             }
         }
-
 
         self.value.uniform_buffers.clear();
         self.value.uniform_buffers_memory.clear();
@@ -584,19 +610,33 @@ impl<'a> PipelineDataBuilder<'a> {
         self.destroy_uniform_buffers();
 
         self.swapchain_data.unwrap().swapchain_images.iter().for_each(|_| {
-            let size = size_of::<Transformation>() as u64;
-            let (uniform_buffer, uniform_buffer_memory) = self.create_buffer(size, BufferUsageFlags::UNIFORM_BUFFER,
+            let b0_size = size_of::<Transformation>() as u64;
+            let (b0, b0_memory) = self.create_buffer(b0_size, BufferUsageFlags::UNIFORM_BUFFER,
                                                                              MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
 
-            self.value.uniform_buffers.push(uniform_buffer);
-            self.value.uniform_buffers_memory.push(uniform_buffer_memory);
+            let b1_size = size_of::<ViewState>() as u64;
+            let (b1, b1_memory) = self.create_buffer(b1_size, BufferUsageFlags::UNIFORM_BUFFER,
+                                                     MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+
+            let b2_size = size_of::<ScatteringMedium>() as u64;
+            let (b2, b2_memory) = self.create_buffer(b2_size, BufferUsageFlags::UNIFORM_BUFFER,
+                                                     MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+
+            let b3_size = size_of::<AtmosphereSampleData>() as u64;
+            let (b3, b3_memory) = self.create_buffer(b3_size, BufferUsageFlags::UNIFORM_BUFFER,
+                                                     MemoryPropertyFlags::HOST_COHERENT | MemoryPropertyFlags::HOST_VISIBLE).unwrap();
+
+            self.value.uniform_buffers.push([b0, b1, b2, b3]);
+            self.value.uniform_buffers_memory.push([b0_memory, b1_memory, b2_memory, b3_memory]);
         });
+
+        println!("Buffers: {:?}", self.value.uniform_buffers);
     }
 
     fn create_descriptor_pool(&mut self) {
         let pool_size = DescriptorPoolSize::builder()
             .type_(DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(self.swapchain_data.unwrap().swapchain_images.len() as u32)
+            .descriptor_count((self.swapchain_data.unwrap().swapchain_images.len() * 4) as u32)
         ;
 
         let pool_sizes = &[pool_size];
@@ -617,22 +657,32 @@ impl<'a> PipelineDataBuilder<'a> {
         self.value.descriptor_sets = unsafe { self.logical_device.unwrap().allocate_descriptor_sets(&info) }.unwrap();
 
         for i in 0..self.swapchain_data.unwrap().swapchain_images.len() {
-            let info = DescriptorBufferInfo::builder()
-                .buffer(self.value.uniform_buffers[i])
-                .offset(0)
-                .range(size_of::<Transformation>() as u64)
-            ;
+            let descriptor_set = self.value.descriptor_sets[i];
+            let buffers = self.value.uniform_buffers[i];
 
-            let buffer_infos = &[info];
-            let write_info = WriteDescriptorSet::builder()
-                .dst_set(self.value.descriptor_sets[i])
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(buffer_infos)
-            ;
+            let buffer_infos = buffers.iter()
+                .map(|b| {
+                        DescriptorBufferInfo::builder()
+                            .buffer(*b)
+                            .offset(0)
+                            .range(WHOLE_SIZE as u64)
+                        })
+                .collect::<Vec<_>>();
 
-            unsafe { self.logical_device.unwrap().update_descriptor_sets(&[write_info], &[] as &[CopyDescriptorSet]) }
+            let write_infos = buffers.iter()
+                .enumerate()
+                .map(|(i, b)|
+                {
+                    WriteDescriptorSet::builder()
+                        .dst_set(descriptor_set)
+                        .dst_binding(i as u32)
+                        .dst_array_element(0)
+                        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                        .buffer_info(&buffer_infos[i..=i])
+                })
+                .collect::<Vec<_>>();
+
+            unsafe { self.logical_device.unwrap().update_descriptor_sets(&write_infos, &[] as &[CopyDescriptorSet]) }
         }
     }
 }
