@@ -2,10 +2,11 @@ use std::collections::HashSet;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 use std::slice;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{Decomposed, Deg, EuclideanSpace, Euler, InnerSpace, perspective, point3, Quaternion, Rad, Rotation, Transform, vec3, vec4, Zero};
+use cgmath::{Decomposed, Deg, EuclideanSpace, Euler, InnerSpace, perspective, point3, Quaternion, Rad, Rotation, SquareMatrix, Transform, vec3, vec4, Zero};
 use cgmath::num_traits::real::Real;
 use log::{debug, info, warn};
 use vulkanalia::{Device, Entry, Instance, vk};
@@ -25,18 +26,21 @@ use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
 use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
+use crate::world::transform::OwnedTransform;
+use crate::world::world::World;
 
 pub struct RHIVulkan {
-    start_time: Instant,
     is_destroyed: bool,
     config: GraphicsConfig,
     data: VulkanData,
     frame_index: usize,
+    world: Option<Arc<RwLock<World>>>
 }
 
 impl RHI for RHIVulkan {
 
-    fn initialize(&mut self) -> Result<()> {
+    fn initialize(&mut self, world: Arc<RwLock<World>>) -> Result<()> {
+        self.world = Some(world);
         Ok(())
     }
     fn update(&mut self) {
@@ -124,7 +128,7 @@ impl RHI for RHIVulkan {
 }
 
 impl RHIVulkan {
-    pub fn new(window: &Window, config: GraphicsConfig, app_start_time: Instant) -> Self {
+    pub fn new(window: &Window, config: GraphicsConfig) -> Self {
         let loader = unsafe { LibloadingLoader::new(LIBRARY) }.unwrap();
         let entry = unsafe { Entry::new(loader) }.unwrap();
         let instance = Self::create_instance(window, &entry, &config).unwrap();
@@ -194,11 +198,11 @@ impl RHIVulkan {
         };
 
         Self {
-            start_time: app_start_time,
             is_destroyed: false,
             config,
             data,
-            frame_index: 0
+            frame_index: 0,
+            world: None
         }
     }
 
@@ -402,22 +406,33 @@ impl RHIVulkan {
     //ToDo: Add transforms and move from here
     fn update_uniform_buffers(&self, image_index: usize) {
         // let camera_pos = point3::<f32>(1360081925.0, -248352419.0, 370630079.0);
-        let camera_pos = point3::<f32>(10.0, -95.0, 25.0*2.0);
-        // z - up
-        // y - forward
-        // x - right
-        // let camera_pos = point3::<f32>(0.0, -5.0, 2.0);
-        let look_at = point3::<f32>(0.0, 0.0, 0.0);
-        let view = Matrix4x4::look_at_rh(
-            camera_pos,
-            look_at,
-            Vector3::new(0.0, 0.0, 1.0)
-        );
+        // let camera_pos = point3::<f32>(0.0, -2005.0, 2000.0);
+        // // z - up
+        // // y - forward
+        // // x - right
+        // // let camera_pos = point3::<f32>(0.0, -5.0, 2.0);
+        // let look_at = point3::<f32>(0.0, 0.0, 0.0);
+        // let view = Matrix4x4::look_at_rh(
+        //     camera_pos,
+        //     look_at,
+        //     Vector3::new(0.0, 0.0, 1.0)
+        // );
+        let world = self.world.as_ref().unwrap().read().unwrap();
+        let camera = world.active_camera();
+        let view = camera.view_matrix();
 
-        let projection = PERSPECTIVE_CORRECTION * perspective(Deg(45.0),
+        let camera_pos = camera.transform().location();
+        // let look_at = point3::<f32>(0.0, 0.0, 0.0);
+        // let view = Matrix4x4::look_at_rh(
+        //     point3(camera_pos.x, camera_pos.y, camera_pos.z),
+        //     look_at,
+        //     Vector3::new(0.0, 0.0, 1.0)
+        // );
+
+        let projection = PERSPECTIVE_CORRECTION * perspective(Deg(camera.view().fov),
                                      self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
-                                     0.1,
-                                     10000000000.0);
+                                     camera.view().near,
+                                     camera.view().far);
 
         let transformation = Transformation::new(view, projection);
 
@@ -445,7 +460,7 @@ impl RHIVulkan {
         let light_illuminance_outer_space = vec4(1., 1., 1., 1.) * 100.0;
 
         let view_state = ViewState {
-            world_camera_origin: camera_pos.to_vec().extend(0.0),
+            world_camera_origin: camera_pos.extend(0.0),
             atmosphere_light_direction: light_dir,
             atmosphere_light_illuminance_outer_space: light_illuminance_outer_space
         };
@@ -562,18 +577,8 @@ impl RHIVulkan {
 
     //ToDo: Make async and parallelize
     fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) {
-        let time = self.start_time.elapsed().as_secs_f32();
-
-        // ToDo: Move
-        // let model = Matrix4x4::from_axis_angle(
-        //     Vector3::new(0.0, 0.0, 1.0),
-        //     Deg(0.0) * time
-        // );
-        let model = Matrix4x4::from_scale(33.0);
-        // let model = Matrix4x4::from_scale(1.0);
-
-        // let model = Matrix4x4::from_translation(Vector3::new(0.0, 0.0, 0.0));
-
+        //ToDo: Move as entity in World
+        let model = Matrix4x4::from_scale(1.0);
         let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
 
         // let command_buffer = self.get_or_add_secondary_buffer(&image_index, buffer_index);

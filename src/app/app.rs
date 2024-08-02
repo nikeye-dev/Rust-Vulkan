@@ -1,20 +1,23 @@
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::error::EventLoopError;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 use anyhow::Result;
-use log::info;
+use log::{debug, info};
 use crate::config::config::{Config, GraphicsApiType};
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::vulkan_rhi::RHIVulkan;
+use crate::world::transform::OwnedTransform;
+use crate::world::world::World;
 
 pub struct App {
     config: Config,
     window: Option<Window>,
     graphics: Option<RHIVulkan>,
-    start_time: Instant
+    world_ref: Arc<RwLock<World>>
 }
 
 impl ApplicationHandler for App {
@@ -26,8 +29,8 @@ impl ApplicationHandler for App {
 
         if self.graphics.is_none() {
             info!("Creating graphics...");
-            let mut api = RHIVulkan::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap(), self.start_time);
-            api.initialize().unwrap();
+            let mut api = RHIVulkan::new(self.window.as_ref().unwrap(), self.config.graphics.get(&GraphicsApiType::Vulkan).cloned().unwrap());
+            api.initialize(self.world_ref.clone()).unwrap();
 
             self.graphics = Some(api);
         }
@@ -55,8 +58,20 @@ impl ApplicationHandler for App {
                 // applications which do not always need to. Applications that redraw continuously
                 // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
-            }
+            },
             _ => (),
+        }
+    }
+
+    fn device_event(&mut self, event_loop: &ActiveEventLoop, device_id: DeviceId, event: DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion {delta} => {
+                let mut world = self.world_ref.write().unwrap();
+
+                let (x, y) = (delta.0.clamp(-1.0, 1.0), delta.1.clamp(-1.0, 1.0));
+                world.active_camera_mut().transform_mut().rotate(x as f32, 0.0, y as f32);
+            },
+            _ => ()
         }
     }
 
@@ -72,7 +87,16 @@ impl ApplicationHandler for App {
 
 impl App {
     pub(crate) fn new(config: Config) -> Self {
-        Self { config, window: None, graphics: None, start_time: Instant::now() }
+        let mut world = World::new();
+        world.active_camera_mut().transform_mut().set_location_xyz(0.0, -5.0, 0.0);
+        // world.active_camera_mut().transform_mut().set_rotation_euler_deg(0.0, 0.0, 180.0);
+
+        Self {
+            config,
+            window: None,
+            graphics: None,
+            world_ref: Arc::new(RwLock::new(world))
+        }
     }
 
     pub(crate) fn run(&mut self) -> Result<(), EventLoopError> {

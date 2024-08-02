@@ -209,7 +209,7 @@ impl<'a> PipelineDataBuilder<'a> {
             .vertex_attribute_descriptions(&attribute_descriptions)
             ;
 
-        let frag = include_bytes!("../../../resources/shaders/Atmosphere.spv");
+        let frag = include_bytes!("../../../resources/shaders/FullscreenTriangle_frag.spv");
 
         let frag_module = self.create_shader_module(&frag[..]).unwrap();
         let frag_stage = PipelineShaderStageCreateInfo::builder()

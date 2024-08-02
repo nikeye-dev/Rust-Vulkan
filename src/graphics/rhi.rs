@@ -1,9 +1,10 @@
-use std::time::Instant;
+use std::sync::{Arc, RwLock};
 use anyhow::Result;
 use winit::window::Window;
+use crate::world::world::World;
 
 pub trait RHI {
-    fn initialize(&mut self) -> Result<()>;
+    fn initialize(&mut self, world: Arc<RwLock<World>>) -> Result<()>;
     fn update(&mut self);
     fn render(&mut self, window: &Window) -> Result<()>;
     fn destroy(&mut self);
