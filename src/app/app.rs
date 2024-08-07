@@ -69,7 +69,9 @@ impl ApplicationHandler for App {
                 let mut world = self.world_ref.write().unwrap();
 
                 let (x, y) = (delta.0.clamp(-1.0, 1.0), delta.1.clamp(-1.0, 1.0));
-                world.active_camera_mut().transform_mut().rotate(x as f32, 0.0, y as f32);
+                debug!("Mouse delta(mod): {:?}, {:?}", x, y);
+
+                world.active_camera_mut().transform_mut().rotate(y as f32, x as f32, 0.0);
             },
             _ => ()
         }
@@ -88,8 +90,8 @@ impl ApplicationHandler for App {
 impl App {
     pub(crate) fn new(config: Config) -> Self {
         let mut world = World::new();
-        world.active_camera_mut().transform_mut().set_location_xyz(0.0, -5.0, 0.0);
-        // world.active_camera_mut().transform_mut().set_rotation_euler_deg(0.0, 0.0, 180.0);
+        world.active_camera_mut().transform_mut().set_location_xyz(0.0, 0.0, -5.0);
+        // world.active_camera_mut().transform_mut().set_rotation_euler_deg(0.0, 15.0, 0.0);
 
         Self {
             config,

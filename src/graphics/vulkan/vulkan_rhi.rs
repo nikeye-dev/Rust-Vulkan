@@ -19,7 +19,7 @@ use winit::window::Window;
 use crate::config::config::{GraphicsConfig, LogLevel};
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
-use crate::graphics::vulkan::transform::{Matrix4x4, Transformation};
+use crate::graphics::vulkan::transformation::{Matrix4x4, Transformation};
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
 use crate::graphics::vulkan::view_state::ViewState;
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
@@ -577,8 +577,11 @@ impl RHIVulkan {
 
     //ToDo: Make async and parallelize
     fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) {
-        //ToDo: Move as entity in World
-        let model = Matrix4x4::from_scale(1.0);
+        //ToDo:
+        let world = self.world.as_ref().unwrap().read().unwrap();
+        let entities = world.get_entities();
+
+        let model = entities[0].transform.matrix();
         let model_bytes = unsafe { slice::from_raw_parts(&model as *const Matrix4x4 as *const u8, size_of::<Matrix4x4>()) };
 
         // let command_buffer = self.get_or_add_secondary_buffer(&image_index, buffer_index);

@@ -1,6 +1,7 @@
-use std::ops::Add;
-use cgmath::InnerSpace;
-use crate::utils::math::{Deg, Euler, Matrix4x4, Quaternion, Vector3, Zero};
+use std::ops::{Add, Mul, MulAssign};
+use cgmath::{InnerSpace, One, Rad, Rotation, Rotation3};
+use log::debug;
+use crate::utils::math::{Deg, Euler, EulerRad, Matrix4x4, Quaternion, Vector3, Zero};
 
 #[derive(Debug)]
 pub struct Transform {
@@ -13,13 +14,25 @@ impl Default for Transform {
     fn default() -> Self {
         Self {
             location: Vector3::zero(),
-            rotation: Quaternion::zero(),
+            rotation: Quaternion::one(),
             scale: Vector3::new(1.0, 1.0, 1.0)
         }
     }
 }
 
 impl Transform {
+    pub fn new(location: Vector3, rotation: Vector3, scale: Vector3) -> Self {
+        Transform {
+            location,
+            rotation: Quaternion::from(Euler {
+                x: Deg(rotation.x),
+                y: Deg(rotation.y),
+                z: Deg(rotation.z),
+            }).normalize(),
+            scale
+        }
+    }
+
     pub fn identity() -> Self {
         Self::default()
     }
@@ -37,11 +50,46 @@ impl Transform {
     }
 
     pub fn matrix(&self) -> Matrix4x4 {
-        let t = Matrix4x4::from_translation(self.location);
-        let r = Matrix4x4::from(self.rotation.normalize());
-        let s = Matrix4x4::from_nonuniform_scale(self.scale.x, self.scale.y, self.scale.z);
+        // self.matrix_t() * self.matrix_r() * self.matrix_s()
+        self.matrix_s() * self.matrix_r() * self.matrix_t()
+    }
 
-        t * r * s
+    pub fn matrix_t(&self) -> Matrix4x4 {
+        Matrix4x4::from_translation(self.location)
+    }
+
+    pub fn matrix_r(&self) -> Matrix4x4 {
+        let rot = self.rotation;
+
+        let xx2 = 2.0 * rot.v.x * rot.v.x;
+        let yy2 = 2.0 * rot.v.y * rot.v.y;
+        let zz2 = 2.0 * rot.v.z * rot.v.z;
+
+        let xy2 = 2.0 * rot.v.x * rot.v.y;
+        let xz2 = 2.0 * rot.v.x * rot.v.z;
+        let yz2 = 2.0 * rot.v.y * rot.v.z;
+
+        let xw2 = 2.0 * rot.v.x * rot.s;
+        let yw2 = 2.0 * rot.v.y * rot.s;
+        let zw2 = 2.0 * rot.v.z * rot.s;
+
+        // Matrix4x4::new(
+        //     1.0 - yy2 - zz2, xy2 - zw2, xz2 + yw2, 0.0,
+        //     xy2 + zw2, 1.0 - xx2 - zz2, yz2 - xw2, 0.0,
+        //     xz2 - yw2, yz2 + xw2, 1.0 - xx2 - yy2, 0.0,
+        //     0.0, 0.0, 0.0, 1.0
+        // )
+
+        Matrix4x4::new(
+            1.0 - yy2 - zz2, xy2 + zw2, xz2 - yw2, 0.0,
+            xy2 - zw2, 1.0 - xx2 - zz2, yz2 + xw2, 0.0,
+            xz2 + yw2, yz2 - xw2, 1.0 - xx2 - yy2, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        )
+    }
+
+    pub fn matrix_s(&self) -> Matrix4x4 {
+        Matrix4x4::from_nonuniform_scale(self.scale.x, self.scale.y, self.scale.z)
     }
 
     pub fn set_location(&mut self, new_location: Vector3) {
@@ -57,7 +105,7 @@ impl Transform {
             x: Deg(x),
             y: Deg(y),
             z: Deg(z)
-        })
+        }).normalize()
     }
 
     pub fn set_scale(&mut self, x: f32, y: f32, z: f32) {
@@ -69,13 +117,12 @@ impl Transform {
     }
 
     pub fn rotate(&mut self, x: f32, y: f32, z: f32) {
-        let add = Quaternion::from(Euler {
-            x: Deg(x),
-            y: Deg(y),
-            z: Deg(z)
-        });
+        let pitch = Quaternion::from_angle_x(Deg(x));
+        let yaw = Quaternion::from_angle_y(Deg(y));
+        let roll = Quaternion::from_angle_z(Deg(z));
 
-        self.rotation += add;
+        //ToDo: fix flip
+        self.rotation = roll * (pitch * self.rotation * yaw);
     }
 }
 

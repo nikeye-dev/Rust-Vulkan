@@ -28,11 +28,18 @@ VS_OUTPUT main(VS_INPUT input)
 //     float2 xy = float2((input.vertexIndex << 1) & 2, input.vertexIndex & 2);
 //     float4 position = float4(xy * float2(2, -2) + float2(-1, 1), 0, 1);
 
-    result.worldPos = mul(pcs.model, float4(input.position, 1.0));
+    float4 pos = float4(input.position, 1.0);
+    pos = mul(pcs.model, pos);
 
-    float4x4 mvp = mul(mul(transform.projection, transform.view), pcs.model);
+    result.worldPos = pos;
 
-    result.position = mul(mvp, float4(input.position, 1.0));
+    pos = mul(transform.view, pos);
+    pos = mul(transform.projection, pos);
+    result.position = pos;
+
+//     float4x4 mvp = mul(mul(transform.projection, transform.view), pcs.model);
+//     result.position = mul(mvp, float4(input.position, 1.0));
+
     result.fragColor = input.color;
 
     return result;

@@ -1,6 +1,6 @@
-use cgmath::{InnerSpace, point3, SquareMatrix, Transform as tf};
+use cgmath::{EuclideanSpace, InnerSpace, Matrix, point3, Point3, SquareMatrix, Transform as tf, vec3};
 use log::debug;
-use crate::utils::math::{Matrix3x3, Matrix4x4, Quaternion, Vector3};
+use crate::utils::math::{Matrix3x3, Matrix4x4, Quaternion, Vector3, Zero};
 use crate::world::transform::{OwnedTransform, Transform};
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -41,37 +41,10 @@ impl Camera {
     }
 
     pub fn view_matrix(&self) -> Matrix4x4 {
-        let mut t = Matrix4x4::from_translation(self.transform().location());
-        let mut r = Matrix4x4::from(self.transform().rotation().normalize());
+        let t = self.transform.matrix_t();
+        let r = self.transform.matrix_r();
 
-        let trans = self.transform.location();
-
-        // let x = cgmath::dot(trans, r.row(0));
-        // let y = cgmath::dot(trans, r.row(1));
-        // let z = cgmath::dot(trans, r.row(2));
-
-        // let mut view2 = Matrix4x4::from(r);
-        // view2[0][3] = -x;
-        // view2[1][3] = -y;
-        // view2[2][3] = -z;
-        // view2[3][3] = 1.0;
-
-        let local_t = r.transform_vector(trans);
-        let t_mat = Matrix4x4::from_translation(local_t);
-        let mut view2 = r * t;
-
-
-        let loc = point3(self.transform.location().x, self.transform.location().y, self.transform.location().z);
-        let look_at = loc + Vector3::new(0., 1., 0.);
-
-        let view = Matrix4x4::look_to_rh(
-            point3(self.transform.location().x, self.transform.location().y, self.transform.location().z),
-            Vector3::new(0., 1., 0.),
-            Vector3::new(0.0, 0.0, 1.0)
-        );
-
-        debug!("{:?} :::: {:?}", view2, view);
-
-        view2
+        //ToDo: make Z go inwards instead of outwards
+        r * t
     }
 }

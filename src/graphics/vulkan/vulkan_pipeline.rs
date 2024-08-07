@@ -13,7 +13,7 @@ use winit::window::Window;
 use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
 
 use crate::graphics::vulkan::push_constants::PushConstants;
-use crate::graphics::vulkan::transform::Transformation;
+use crate::graphics::vulkan::transformation::Transformation;
 use crate::graphics::vulkan::vertex::Vertex;
 use crate::graphics::vulkan::view_state::ViewState;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;

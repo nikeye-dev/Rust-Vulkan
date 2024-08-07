@@ -5,7 +5,7 @@ use log::{debug, error, trace, warn};
 use thiserror::Error;
 use vulkanalia::{Device, Instance, Version, vk};
 use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
-use crate::graphics::vulkan::transform::Matrix4x4;
+use crate::graphics::vulkan::transformation::Matrix4x4;
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
 
 pub(crate) const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
@@ -23,37 +23,36 @@ pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 #[error("Suitability Error: {0}.")]
 pub struct CompatibilityError(pub &'static str);
 
-pub static VERTICES: [Vertex; 8] = [
-    Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-];
-
-
-pub static INDICES: &[u16] = &[
-    0, 1, 3, 3, 1, 2,
-    1, 5, 2, 2, 5, 6,
-    5, 4, 6, 6, 4, 7,
-    4, 0, 7, 7, 0, 3,
-    3, 2, 7, 7, 2, 6,
-    4, 5, 0, 0, 5, 1
-];
-
-// pub static VERTICES: [Vertex; 4] = [
-//     Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(0.5, -0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(0.5, 0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-//     Vertex::new(Vector3::new(-0.5, 0.5, 0.0), Vector4::new(1.0, 1.0, 1.0, 1.0)),
+// pub static VERTICES: [Vertex; 8] = [
+//     Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+//     Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+//     Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
 // ];
 //
-// pub static INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
+//
+// pub static INDICES: &[u16] = &[
+//     0, 1, 3, 3, 1, 2,
+//     1, 5, 2, 2, 5, 6,
+//     5, 4, 6, 6, 4, 7,
+//     4, 0, 7, 7, 0, 3,
+//     3, 2, 7, 7, 2, 6,
+//     4, 5, 0, 0, 5, 1
+// ];
 
-pub static PERSPECTIVE_CORRECTION: Matrix4x4 = Matrix4x4::new(
+pub static VERTICES: [Vertex; 3] = [
+    Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(0.0, 0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(0.5, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+];
+
+pub static INDICES: &[u16] = &[0, 1, 2];
+
+pub const PERSPECTIVE_CORRECTION: Matrix4x4 = Matrix4x4::new(
     1.0,  0.0,       0.0, 0.0,
     0.0, -1.0,       0.0, 0.0,
     0.0,  0.0, 1.0 / 2.0, 0.0,
