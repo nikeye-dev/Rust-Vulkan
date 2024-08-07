@@ -1,8 +1,10 @@
 use std::cmp::min;
+
 use log::debug;
 use vulkanalia::{Device, Instance, vk};
 use vulkanalia::vk::{ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceV1_0, Extent2D, Format, Handle, HasBuilder, Image, ImageUsageFlags, ImageView, KhrSurfaceExtension, KhrSwapchainExtension, PhysicalDevice, PresentModeKHR, SharingMode, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR};
 use winit::window::Window;
+
 use crate::graphics::vulkan::vulkan_utils::LogicalDeviceDestroy;
 
 #[derive(Debug, Default)]

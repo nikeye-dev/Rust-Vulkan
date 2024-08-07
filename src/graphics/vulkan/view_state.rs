@@ -1,5 +1,6 @@
 use cgmath::Zero;
-use crate::graphics::vulkan::vertex::{Vector4};
+
+use crate::graphics::vulkan::vertex::Vector4;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

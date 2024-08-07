@@ -1,15 +1,22 @@
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
+
+use anyhow::Result;
+use cgmath::Vector2;
+use log::{debug, info};
 use winit::application::ApplicationHandler;
 use winit::error::EventLoopError;
-use winit::event::{DeviceEvent, DeviceId, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key, NamedKey, SmolStr};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowId};
-use anyhow::Result;
-use log::{debug, info};
+
 use crate::config::config::{Config, GraphicsApiType};
+use crate::controls::controls::Controls;
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::vulkan_rhi::RHIVulkan;
+use crate::utils::math::Vector3;
 use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
@@ -37,6 +44,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        //ToDo: Add input handling in engine
         match event {
             WindowEvent::CloseRequested => {
                 info!("The close button was pressed; stopping");
@@ -58,6 +66,43 @@ impl ApplicationHandler for App {
                 // applications which do not always need to. Applications that redraw continuously
                 // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
+            },
+            WindowEvent::KeyboardInput {device_id, event, is_synthetic} => {
+                if event.state != ElementState::Pressed {
+                    return;
+                }
+
+                if let Key::Named(named_key) = event.key_without_modifiers() {
+                    match named_key {
+                        NamedKey::Space => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 1.0, 0.0));
+                        },
+                        NamedKey::Control => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, -1.0, 0.0));
+                        },
+                        NamedKey::Escape => {
+                            event_loop.exit();
+                        }
+                        _ => ()
+                    }
+                }
+                else {
+                    match event.key_without_modifiers().as_ref() {
+                        Key::Character("w") => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 0.0, 1.0));
+                        },
+                        Key::Character("s") => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 0.0, -1.0));
+                        },
+                        Key::Character("a") => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(-1.0, 0.0, 0.0));
+                        },
+                        Key::Character("d") => {
+                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(1.0, 0.0, 0.0));
+                        }
+                        _ => ()
+                    }
+                }
             },
             _ => (),
         }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
+
+use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 #[derive(Default, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]

@@ -1,6 +1,6 @@
-use cgmath::{EuclideanSpace, InnerSpace, Matrix, point3, Point3, SquareMatrix, Transform as tf, vec3};
-use log::debug;
-use crate::utils::math::{Matrix3x3, Matrix4x4, Quaternion, Vector3, Zero};
+use cgmath::SquareMatrix;
+
+use crate::utils::math::Matrix4x4;
 use crate::world::transform::{OwnedTransform, Transform};
 
 #[derive(Default, Debug, Copy, Clone)]

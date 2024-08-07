@@ -1,7 +1,6 @@
-use std::ops::{Add, Mul, MulAssign};
-use cgmath::{InnerSpace, One, Rad, Rotation, Rotation3};
-use log::debug;
-use crate::utils::math::{Deg, Euler, EulerRad, Matrix4x4, Quaternion, Vector3, Zero};
+use cgmath::{InnerSpace, One, Rotation3, Transform as cgTransform};
+
+use crate::utils::math::{Deg, Euler, Matrix4x4, Quaternion, Vector3, Zero};
 
 #[derive(Debug)]
 pub struct Transform {
@@ -116,13 +115,21 @@ impl Transform {
         self.set_scale(scale, scale, scale);
     }
 
-    pub fn rotate(&mut self, x: f32, y: f32, z: f32) {
-        let pitch = Quaternion::from_angle_x(Deg(x));
-        let yaw = Quaternion::from_angle_y(Deg(y));
-        let roll = Quaternion::from_angle_z(Deg(z));
+    pub fn rotate(&mut self, x_deg: f32, y_deg: f32, z_deg: f32) {
+        let pitch = Quaternion::from_angle_x(Deg(x_deg));
+        let yaw = Quaternion::from_angle_y(Deg(y_deg));
+        let roll = Quaternion::from_angle_z(Deg(z_deg));
 
         //ToDo: fix flip
         self.rotation = roll * (pitch * self.rotation * yaw);
+    }
+
+    pub fn transform_vector(&self, vector: Vector3) -> Vector3 {
+        self.matrix().transform_vector(vector)
+    }
+
+    pub fn inverse_transform_vector(&self, vector: Vector3) -> Vector3 {
+        self.matrix().inverse_transform_vector(vector).unwrap()
     }
 }
 

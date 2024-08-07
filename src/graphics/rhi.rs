@@ -1,6 +1,8 @@
 use std::sync::{Arc, RwLock};
+
 use anyhow::Result;
 use winit::window::Window;
+
 use crate::world::world::World;
 
 pub trait RHI {

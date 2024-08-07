@@ -1,10 +1,12 @@
 use std::ffi::CStr;
 use std::os::raw::c_void;
+
 use anyhow::anyhow;
 use log::{debug, error, trace, warn};
 use thiserror::Error;
 use vulkanalia::{Device, Instance, Version, vk};
 use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
+
 use crate::graphics::vulkan::transformation::Matrix4x4;
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
 

@@ -1,13 +1,16 @@
 use std::time::Instant;
+
 use crate::camera::camera::Camera;
-use crate::utils::math::{Vector3, VECTOR3_ONE, Zero};
+use crate::camera::orbit_camera::OrbitCamera;
+use crate::utils::math::Vector3;
 use crate::world::entity::Entity;
-use crate::world::transform::Transform;
+use crate::world::transform::{OwnedTransform, Transform};
 
 pub struct World {
     start_time: Instant,
-    main_camera: Camera,
-    entities: Vec<Entity>
+    //ToDo: Make private and handle input
+    pub main_camera: OrbitCamera,
+    entities: Vec<Entity>,
 }
 
 impl World {
@@ -22,19 +25,21 @@ impl World {
             test_entity
         ];
 
+        let orbit_camera = OrbitCamera::default();
+
         Self {
             start_time: Instant::now(),
-            main_camera: Camera::default(),
-            entities
+            main_camera: orbit_camera,
+            entities,
         }
     }
 
     pub fn active_camera(&self) -> &Camera {
-        &self.main_camera
+        self.main_camera.camera()
     }
 
     pub fn active_camera_mut(&mut self) -> &mut Camera {
-        &mut self.main_camera
+        self.main_camera.camera_mut()
     }
 
     pub fn start_time(&self) -> Instant {

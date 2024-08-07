@@ -1,5 +1,6 @@
-use cgmath::{Zero};
+use cgmath::Zero;
 use pub_fields::pub_fields;
+
 use crate::graphics::vulkan::vertex::{Vector3, Vector4};
 
 #[repr(C)]

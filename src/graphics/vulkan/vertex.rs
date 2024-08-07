@@ -1,4 +1,5 @@
 use std::mem::size_of;
+
 use vulkanalia::vk::{Format, HasBuilder, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate};
 
 pub type Vector2 = cgmath::Vector2<f32>;

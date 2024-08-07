@@ -1,7 +1,7 @@
 use vulkanalia::{Device, Entry, Instance, vk};
-use vulkanalia::vk::{Buffer, DebugUtilsMessengerEXT, DeviceMemory, DeviceV1_0, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, InstanceV1_0, KhrSurfaceExtension, KhrSwapchainExtension, PhysicalDevice, Queue, Semaphore, SemaphoreCreateInfo, SurfaceKHR};
-use crate::graphics::vulkan::vulkan_pipeline::PipelineData;
+use vulkanalia::vk::{DebugUtilsMessengerEXT, DeviceV1_0, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, InstanceV1_0, KhrSurfaceExtension, PhysicalDevice, Queue, Semaphore, SemaphoreCreateInfo, SurfaceKHR};
 
+use crate::graphics::vulkan::vulkan_pipeline::PipelineData;
 use crate::graphics::vulkan::vulkan_swapchain::SwapchainData;
 use crate::graphics::vulkan::vulkan_utils::LogicalDeviceDestroy;
 
