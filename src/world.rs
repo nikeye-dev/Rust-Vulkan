@@ -1,3 +1,4 @@
 pub mod transform;
 pub mod world;
-mod entity;
+pub mod entity;
+pub mod game_object;

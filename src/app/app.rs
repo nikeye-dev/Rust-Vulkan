@@ -5,10 +5,11 @@ use anyhow::Result;
 use cgmath::Vector2;
 use log::{debug, info};
 use winit::application::ApplicationHandler;
+use winit::dpi::{PhysicalSize, Size};
 use winit::error::EventLoopError;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey, SmolStr};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowId};
 
@@ -17,6 +18,7 @@ use crate::controls::controls::Controls;
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::vulkan_rhi::RHIVulkan;
 use crate::utils::math::Vector3;
+use crate::world::game_object::GameObject;
 use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
@@ -31,6 +33,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let mut attributes = Window::default_attributes();
         attributes.title = "Rust - Vulkan".to_string();
+        attributes.inner_size = Some(Size::Physical(PhysicalSize::new(1536, 1152)));
 
         self.window = Some(event_loop.create_window(attributes).unwrap());
 
@@ -57,6 +60,11 @@ impl ApplicationHandler for App {
                 // this event rather than in AboutToWait, since rendering in here allows
                 // the program to gracefully handle redraws requested by the OS.
 
+                {
+                    let mut world = self.world_ref.write().unwrap();
+                    world.update(0.0);
+                }
+
                 // Draw.
                 self.render().unwrap();
 
@@ -68,37 +76,10 @@ impl ApplicationHandler for App {
                 self.window.as_ref().unwrap().request_redraw();
             },
             WindowEvent::KeyboardInput {device_id, event, is_synthetic} => {
-                if event.state != ElementState::Pressed {
-                    return;
-                }
-
                 if let Key::Named(named_key) = event.key_without_modifiers() {
                     match named_key {
-                        NamedKey::Space => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 1.0, 0.0));
-                        },
-                        NamedKey::Control => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, -1.0, 0.0));
-                        },
-                        NamedKey::Escape => {
+                        NamedKey::Escape if event.state == ElementState::Pressed => {
                             event_loop.exit();
-                        }
-                        _ => ()
-                    }
-                }
-                else {
-                    match event.key_without_modifiers().as_ref() {
-                        Key::Character("w") => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 0.0, 1.0));
-                        },
-                        Key::Character("s") => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(0.0, 0.0, -1.0));
-                        },
-                        Key::Character("a") => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(-1.0, 0.0, 0.0));
-                        },
-                        Key::Character("d") => {
-                            self.world_ref.as_ref().write().unwrap().main_camera.add_input(Vector3::new(1.0, 0.0, 0.0));
                         }
                         _ => ()
                     }
@@ -113,11 +94,19 @@ impl ApplicationHandler for App {
             DeviceEvent::MouseMotion {delta} => {
                 let mut world = self.world_ref.write().unwrap();
 
-                let (x, y) = (delta.0.clamp(-1.0, 1.0), delta.1.clamp(-1.0, 1.0));
-                debug!("Mouse delta(mod): {:?}, {:?}", x, y);
+                // let (x, y) = (delta.0.clamp(-1.0, 1.0), delta.1.clamp(-1.0, 1.0));
+                // debug!("Mouse delta(mod): {:?}, {:?}", x, y);
+                //
+                // world.active_camera_mut().transform_mut().rotate(y as f32, x as f32, 0.0);
 
-                world.active_camera_mut().transform_mut().rotate(y as f32, x as f32, 0.0);
+                world.main_camera.handle_mouse_move(delta);
             },
+            DeviceEvent::Key(key) => {
+                if let PhysicalKey::Code(key_code) = key.physical_key {
+                    let mut world = self.world_ref.write().unwrap();
+                    world.main_camera.handle_input_key(key_code, key.state);
+                }
+            }
             _ => ()
         }
     }

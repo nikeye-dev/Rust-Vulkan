@@ -115,6 +115,10 @@ impl Transform {
         self.set_scale(scale, scale, scale);
     }
 
+    pub fn rotate_vec(&mut self, rot: Vector3) {
+        self.rotate(rot.x, rot.y, rot.z);
+    }
+
     pub fn rotate(&mut self, x_deg: f32, y_deg: f32, z_deg: f32) {
         let pitch = Quaternion::from_angle_x(Deg(x_deg));
         let yaw = Quaternion::from_angle_y(Deg(y_deg));
