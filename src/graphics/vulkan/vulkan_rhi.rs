@@ -25,7 +25,7 @@ use crate::graphics::vulkan::view_state::ViewState;
 use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
-use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
+use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, perspective_matrix, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
 use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
@@ -405,34 +405,16 @@ impl RHIVulkan {
 
     //ToDo: Add transforms and move from here
     fn update_uniform_buffers(&self, image_index: usize) {
-        // let camera_pos = point3::<f32>(1360081925.0, -248352419.0, 370630079.0);
-        // let camera_pos = point3::<f32>(0.0, -2005.0, 2000.0);
-        // // z - up
-        // // y - forward
-        // // x - right
-        // // let camera_pos = point3::<f32>(0.0, -5.0, 2.0);
-        // let look_at = point3::<f32>(0.0, 0.0, 0.0);
-        // let view = Matrix4x4::look_at_rh(
-        //     camera_pos,
-        //     look_at,
-        //     Vector3::new(0.0, 0.0, 1.0)
-        // );
         let world = self.world.as_ref().unwrap().read().unwrap();
         let camera = world.active_camera();
         let view = camera.view_matrix();
 
         let camera_pos = camera.transform().location();
-        // let look_at = point3::<f32>(0.0, 0.0, 0.0);
-        // let view = Matrix4x4::look_at_rh(
-        //     point3(camera_pos.x, camera_pos.y, camera_pos.z),
-        //     look_at,
-        //     Vector3::new(0.0, 0.0, 1.0)
-        // );
-
-        let projection = PERSPECTIVE_CORRECTION * perspective(Deg(camera.view().fov),
-                                     self.data.swapchain_data.swapchain_extent.width as f32 / self.data.swapchain_data.swapchain_extent.height as f32,
-                                     camera.view().near,
-                                     camera.view().far);
+        let projection = PERSPECTIVE_CORRECTION * perspective_matrix(camera.view().fov,
+                                                        self.data.swapchain_data.swapchain_extent.width as f32,
+                                                        self.data.swapchain_data.swapchain_extent.height as f32,
+                                                        camera.view().near,
+                                                        camera.view().far);
 
         let transformation = Transformation::new(view, projection);
 

@@ -1,6 +1,6 @@
-use cgmath::SquareMatrix;
+use cgmath::{EuclideanSpace, Point3, point3, SquareMatrix};
 
-use crate::utils::math::Matrix4x4;
+use crate::utils::math::{Matrix4x4, Vector3};
 use crate::world::transform::{OwnedTransform, Transform};
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -41,7 +41,7 @@ impl Camera {
     }
 
     pub fn view_matrix(&self) -> Matrix4x4 {
-        let t = self.transform.matrix_t();
+        let t = Matrix4x4::from_translation(-self.transform.location());
         let r = self.transform.matrix_r();
 
         //ToDo: make Z go inwards instead of outwards

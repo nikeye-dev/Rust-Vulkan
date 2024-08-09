@@ -139,7 +139,7 @@ float3 SingleScattering(const float3 worldPos, float3 viewPos)
 	const float cosTheta = dot(sampleData.lightDir.xyz, viewDir);
 	const float phaseR = PhaseRayleigh(cosTheta);
 	float3 l = sampleData.lightIntensity.xyz * (phaseR * medium.scatteringR.xyz * a);
-	
+
 	return l;
 }
 

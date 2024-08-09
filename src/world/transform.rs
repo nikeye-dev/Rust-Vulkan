@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, One, Rotation3, Transform as cgTransform};
+use cgmath::{InnerSpace, Matrix4, One, Rotation3, Transform as cgTransform};
 
 use crate::utils::math::{Deg, Euler, Matrix4x4, Quaternion, Vector3, Zero};
 
@@ -68,21 +68,14 @@ impl Transform {
         let xz2 = 2.0 * rot.v.x * rot.v.z;
         let yz2 = 2.0 * rot.v.y * rot.v.z;
 
-        let xw2 = 2.0 * rot.v.x * rot.s;
-        let yw2 = 2.0 * rot.v.y * rot.s;
-        let zw2 = 2.0 * rot.v.z * rot.s;
-
-        // Matrix4x4::new(
-        //     1.0 - yy2 - zz2, xy2 - zw2, xz2 + yw2, 0.0,
-        //     xy2 + zw2, 1.0 - xx2 - zz2, yz2 - xw2, 0.0,
-        //     xz2 - yw2, yz2 + xw2, 1.0 - xx2 - yy2, 0.0,
-        //     0.0, 0.0, 0.0, 1.0
-        // )
+        let wx2 = 2.0 * rot.v.x * rot.s;
+        let wy2 = 2.0 * rot.v.y * rot.s;
+        let wz2 = 2.0 * rot.v.z * rot.s;
 
         Matrix4x4::new(
-            1.0 - yy2 - zz2, xy2 + zw2, xz2 - yw2, 0.0,
-            xy2 - zw2, 1.0 - xx2 - zz2, yz2 + xw2, 0.0,
-            xz2 + yw2, yz2 - xw2, 1.0 - xx2 - yy2, 0.0,
+            1.0 - yy2 - zz2, xy2 - wz2, xz2 + wy2, 0.0,
+            xy2 + wz2, 1.0 - xx2 - zz2, yz2 - wx2, 0.0,
+            xz2 - wy2, yz2 + wx2, 1.0 - xx2 - yy2, 0.0,
             0.0, 0.0, 0.0, 1.0
         )
     }
@@ -124,8 +117,7 @@ impl Transform {
         let yaw = Quaternion::from_angle_y(Deg(y_deg));
         let roll = Quaternion::from_angle_z(Deg(z_deg));
 
-        //ToDo: fix flip
-        self.rotation = roll * (pitch * self.rotation * yaw);
+        self.rotation = (yaw * self.rotation * pitch) * roll;
     }
 
     pub fn transform_vector(&self, vector: Vector3) -> Vector3 {

@@ -1,8 +1,9 @@
 use std::time::Instant;
+use cgmath::InnerSpace;
 
 use crate::camera::camera::Camera;
 use crate::camera::orbit_camera::OrbitCamera;
-use crate::utils::math::Vector3;
+use crate::utils::math::{Vector3, Zero};
 use crate::world::entity::Entity;
 use crate::world::game_object::GameObject;
 use crate::world::transform::{OwnedTransform, Transform};
@@ -66,6 +67,15 @@ impl GameObject for World {
         self.last_frame_time = frame_time;
 
         self.main_camera.update(delta_time);
+
+        let entity = self.entities.get_mut(0).unwrap();
+        let mut location = entity.transform.location();
+        location = location + Vector3::new(1.0, 1.0, 1.0).normalize() * delta_time;
+        if(location.magnitude() > 5.0) {
+            location = Vector3::zero();
+        }
+
+        // entity.transform.set_location(location);
     }
 
     fn destroy(&mut self) {

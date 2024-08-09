@@ -2,10 +2,11 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 
 use anyhow::anyhow;
+use cgmath::{Angle, Deg, Matrix, Rad};
 use log::{debug, error, trace, warn};
 use thiserror::Error;
 use vulkanalia::{Device, Instance, Version, vk};
-use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
+use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
 
 use crate::graphics::vulkan::transformation::Matrix4x4;
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
@@ -17,7 +18,7 @@ pub(crate) const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 pub(crate) const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
-pub(crate) const DEVICE_EXTENSIONS: &[ExtensionName] = &[KHR_SWAPCHAIN_EXTENSION.name];
+pub(crate) const DEVICE_EXTENSIONS: &[ExtensionName] = &[KHR_SWAPCHAIN_EXTENSION.name, KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name];
 
 pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
@@ -25,34 +26,34 @@ pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 #[error("Suitability Error: {0}.")]
 pub struct CompatibilityError(pub &'static str);
 
-// pub static VERTICES: [Vertex; 8] = [
-//     Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-//     Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-//     Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-//     Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-// ];
-//
-//
-// pub static INDICES: &[u16] = &[
-//     0, 1, 3, 3, 1, 2,
-//     1, 5, 2, 2, 5, 6,
-//     5, 4, 6, 6, 4, 7,
-//     4, 0, 7, 7, 0, 3,
-//     3, 2, 7, 7, 2, 6,
-//     4, 5, 0, 0, 5, 1
-// ];
-
-pub static VERTICES: [Vertex; 3] = [
-    Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(0.0, 0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(0.5, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+pub static VERTICES: [Vertex; 8] = [
+    Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
 ];
 
-pub static INDICES: &[u16] = &[0, 1, 2];
+
+pub static INDICES: &[u16] = &[
+    0, 1, 3, 3, 1, 2,
+    1, 5, 2, 2, 5, 6,
+    5, 4, 6, 6, 4, 7,
+    4, 0, 7, 7, 0, 3,
+    3, 2, 7, 7, 2, 6,
+    4, 5, 0, 0, 5, 1
+];
+
+// pub static VERTICES: [Vertex; 3] = [
+//     Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+//     Vertex::new(Vector3::new(0.0, 0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+//     Vertex::new(Vector3::new(0.5, -0.5, 0.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+// ];
+//
+// pub static INDICES: &[u16] = &[0, 1, 2];
 
 pub const PERSPECTIVE_CORRECTION: Matrix4x4 = Matrix4x4::new(
     1.0,  0.0,       0.0, 0.0,
@@ -108,4 +109,31 @@ impl QueueFamilyIndices {
 //ToDo: Something more sensible
 pub trait LogicalDeviceDestroy {
     fn destroy(&mut self, logical_device: &Device);
+}
+
+pub fn perspective_matrix(fovy: f32, view_width: f32, view_height: f32, near: f32, far: f32,) -> Matrix4x4 {
+    let aspect = view_width / view_height;
+    // let tan = Deg::tan(Deg(fovy * 0.5));
+
+    // Matrix4x4::new(
+    //     1.0 / (aspect * tan), 0.0, 0.0, 0.0,
+    //     0.0, 1.0 / tan, 0.0, 0.0,
+    //     0.0, 0.0, (far + near) / (far - near), 1.0,
+    //     0.0, 0.0, (2.0 * far * near) / (far - near), 0.0
+    // )
+
+    let half_fov = fovy * 0.5;
+    let sin_fov = Rad::sin(Deg(half_fov).into());
+    let cos_fov = Rad::cos(Deg(half_fov).into());
+
+    let h = cos_fov / sin_fov;
+    let w = h / aspect;
+    let range = far / (far - near);
+
+    Matrix4x4::new(
+        w, 0.0, 0.0, 0.0,
+        0.0, h, 0.0, 0.0,
+        0.0, 0.0, range, -range * near,
+        0.0, 0.0, 1.0, 0.0
+    ).transpose()
 }
