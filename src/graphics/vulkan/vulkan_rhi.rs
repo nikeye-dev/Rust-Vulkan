@@ -26,6 +26,7 @@ use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
 use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
 use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
 use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, perspective_matrix, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
+use crate::utils::math::{VECTOR3_BACKWARD, VECTOR3_FORWARD};
 use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
@@ -433,12 +434,12 @@ impl RHIVulkan {
 
         let light_pos = vec4(0.0f32, 100., 1000., 0.);
         let light_rot = Quaternion::from(Euler {
-            x: Deg(0.0),
-            y: Deg(45.0),
-            z: Deg(75.0)
+            x: Deg(-65.0),
+            y: Deg(25.0),
+            z: Deg(0.0)
         });
 
-        let light_dir =  light_rot.rotate_vector(Vector3::new(0.0, 1.0, 0.0)).extend(0.0);//(light_pos - Vector4::zero()).normalize();
+        let light_dir =  light_rot.rotate_vector(VECTOR3_FORWARD).extend(0.0);//(light_pos - Vector4::zero()).normalize();
         let light_illuminance_outer_space = vec4(1., 1., 1., 1.) * 100.0;
 
         let view_state = ViewState {
@@ -533,7 +534,11 @@ impl RHIVulkan {
             }
         };
 
-        let clear_values = &[color_clear_value];
+        let depth_clear_value = ClearValue {
+            depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 },
+        };
+
+        let clear_values = &[color_clear_value, depth_clear_value];
         let render_pass_begin_info = RenderPassBeginInfo::builder()
             .render_pass(self.data.pipeline_data.render_pass)
             .framebuffer(self.data.pipeline_data.framebuffers[image_index])

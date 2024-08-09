@@ -1,8 +1,9 @@
 use std::cmp::min;
+use anyhow::anyhow;
 
 use log::debug;
 use vulkanalia::{Device, Instance, vk};
-use vulkanalia::vk::{ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceV1_0, Extent2D, Format, Handle, HasBuilder, Image, ImageUsageFlags, ImageView, KhrSurfaceExtension, KhrSwapchainExtension, PhysicalDevice, PresentModeKHR, SharingMode, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR};
+use vulkanalia::vk::{ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceMemory, DeviceV1_0, Extent2D, Format, Handle, HasBuilder, Image, ImageAspectFlags, ImageSubresourceRange, ImageTiling, ImageUsageFlags, ImageView, ImageViewCreateInfo, InstanceV1_0, KhrSurfaceExtension, KhrSwapchainExtension, MemoryPropertyFlags, MemoryRequirements, PhysicalDevice, PresentModeKHR, SharingMode, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR};
 use winit::window::Window;
 
 use crate::graphics::vulkan::vulkan_utils::LogicalDeviceDestroy;
@@ -14,11 +15,19 @@ pub struct SwapchainData {
     pub swapchain_format: Format,
     pub swapchain_extent: Extent2D,
     pub swapchain_image_views: Vec<ImageView>,
+
+    pub(crate) depth_image: Image,
+    pub(crate) depth_image_memory: DeviceMemory,
+    pub(crate) depth_image_view: ImageView
 }
 
 impl LogicalDeviceDestroy for SwapchainData {
     fn destroy(&mut self, logical_device: &Device) {
         unsafe {
+            logical_device.destroy_image_view(self.depth_image_view, None);
+            logical_device.free_memory(self.depth_image_memory, None);
+            logical_device.destroy_image(self.depth_image, None);
+
             self.swapchain_image_views
                 .iter()
                 .for_each(|v| logical_device.destroy_image_view(*v, None));
@@ -80,12 +89,17 @@ impl<'a> SwapchainDataBuilder<'a> {
 
         let surface_extent = Self::get_swapchain_extent(self.window.unwrap(), capabilities);
 
+        let (depth_image, depth_image_memory, depth_image_view) = self.create_depth_objects(surface_extent);
+
         Ok(SwapchainData {
             swapchain,
             swapchain_format: surface_format,
             swapchain_extent: surface_extent,
             swapchain_images,
             swapchain_image_views,
+            depth_image,
+            depth_image_memory,
+            depth_image_view
         }
         )
     }
@@ -183,6 +197,98 @@ impl<'a> SwapchainDataBuilder<'a> {
                 ))
                 .build()
         }
+    }
+
+    fn create_depth_objects(&self, swapchain_extent: Extent2D) -> (Image, DeviceMemory, ImageView) {
+        let format = Format::D32_SFLOAT;
+        let (depth_image, depth_image_memory) = self.create_image(swapchain_extent.width,
+                                                                  swapchain_extent.height,
+                                                                  format,
+                                                                  ImageTiling::OPTIMAL,
+                                                                  ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                                                                  MemoryPropertyFlags::DEVICE_LOCAL);
+
+        let image_view = self.create_image_view(depth_image, format, ImageAspectFlags::DEPTH);
+
+        (depth_image, depth_image_memory, image_view)
+    }
+
+    fn create_image_view(&self, image: Image, format: Format, aspects: ImageAspectFlags) -> ImageView {
+        let subresource_range = ImageSubresourceRange::builder()
+            .aspect_mask(aspects)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+
+        let info = ImageViewCreateInfo::builder()
+            .image(image)
+            .view_type(vk::ImageViewType::_2D)
+            .format(format)
+            .subresource_range(subresource_range);
+
+        unsafe { self.logical_device.unwrap().create_image_view(&info, None) }.unwrap()
+    }
+
+    fn create_image(
+        &self,
+        width: u32,
+        height: u32,
+        format: Format,
+        tiling: ImageTiling,
+        usage: ImageUsageFlags,
+        properties: MemoryPropertyFlags,
+    ) -> (Image, DeviceMemory) {
+        // Image
+
+        let info = vk::ImageCreateInfo::builder()
+            .image_type(vk::ImageType::_2D)
+            .extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .format(format)
+            .tiling(tiling)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .usage(usage)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .samples(vk::SampleCountFlags::_1);
+
+        let logical_device = self.logical_device.unwrap();
+        let image = unsafe { logical_device.create_image(&info, None) }.unwrap();
+
+        // Memory
+
+        let requirements = unsafe { logical_device.get_image_memory_requirements(image) };
+
+        let info = vk::MemoryAllocateInfo::builder()
+            .allocation_size(requirements.size)
+            .memory_type_index(self.get_memory_type_index(properties, requirements).unwrap());
+
+        let image_memory = unsafe { logical_device.allocate_memory(&info, None) }.unwrap();
+
+        unsafe { logical_device.bind_image_memory(image, image_memory, 0) }.unwrap();
+
+        (image, image_memory)
+    }
+
+    //ToDo: Unify with pipeline
+    fn get_memory_type_index(&self, properties: MemoryPropertyFlags, requirements: MemoryRequirements) -> anyhow::Result<u32> {
+        let instance = self.instance.unwrap();
+        let physical_device = self.physical_device;
+
+        let memory = unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+        (0..memory.memory_type_count)
+            .find(|i| {
+                let suitable = (requirements.memory_type_bits & (1u32 << i)) != 0;
+                let memory_type = memory.memory_types[*i as usize];
+                suitable && memory_type.property_flags.contains(properties)
+            })
+            .ok_or_else(|| anyhow!("Failed to find suitable memory type"))
     }
 }
 

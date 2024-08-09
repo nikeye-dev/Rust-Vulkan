@@ -6,7 +6,7 @@ use std::mem::{size_of, take};
 use anyhow::anyhow;
 use vulkanalia::{Device, Instance};
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
+use vulkanalia::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CompareOp, CopyDescriptorSet, CullModeFlags, DescriptorBufferInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, DeviceV1_0, Fence, Format, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, Handle, HasBuilder, ImageLayout, InstanceV1_0, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Queue, Rect2D, RenderPass, RenderPassCreateInfo, SampleCountFlags, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SUBPASS_EXTERNAL, SubpassDependency, SubpassDescription, SurfaceKHR, Viewport, WHOLE_SIZE, WriteDescriptorSet};
 use winit::window::Window;
 
 use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
@@ -207,7 +207,7 @@ impl<'a> PipelineDataBuilder<'a> {
             .vertex_attribute_descriptions(&attribute_descriptions)
             ;
 
-        let frag = include_bytes!("../../../resources/shaders/Atmosphere.spv");
+        let frag = include_bytes!("../../../resources/shaders/FullscreenTriangle_frag.spv");
 
         let frag_module = self.create_shader_module(&frag[..]).unwrap();
         let frag_stage = PipelineShaderStageCreateInfo::builder()
@@ -255,7 +255,12 @@ impl<'a> PipelineDataBuilder<'a> {
             .rasterization_samples(SampleCountFlags::_1)
             ;
 
-        // let depth_stencil_state = PipelineDepthStencilStateCreateInfo::builder();
+        let depth_stencil_state = PipelineDepthStencilStateCreateInfo::builder()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false);
 
         let color_blend_attachment = PipelineColorBlendAttachmentState::builder()
             .color_write_mask(ColorComponentFlags::all())
@@ -302,6 +307,7 @@ impl<'a> PipelineDataBuilder<'a> {
             .rasterization_state(&rasterization_state)
             .multisample_state(&multisample_state)
             .color_blend_state(&color_blend_state)
+            .depth_stencil_state(&depth_stencil_state)
             .layout(self.value.pipeline_layout)
             .render_pass(self.value.render_pass)
             .subpass(0)
@@ -346,22 +352,37 @@ impl<'a> PipelineDataBuilder<'a> {
             .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             ;
 
+        let depth_stencil_attachment = AttachmentDescription::builder()
+            .format(Format::D32_SFLOAT)
+            .samples(SampleCountFlags::_1)
+            .load_op(AttachmentLoadOp::CLEAR)
+            .store_op(AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        let depth_stencil_attachment_ref = AttachmentReference::builder()
+            .attachment(1)
+            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
         let color_attachments = &[color_attachment_ref];
         let subpass = SubpassDescription::builder()
             .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
             .color_attachments(color_attachments)
+            .depth_stencil_attachment(&depth_stencil_attachment_ref)
             ;
 
         let dependency = SubpassDependency::builder()
             .src_subpass(SUBPASS_EXTERNAL)
             .dst_subpass(0)
-            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | PipelineStageFlags::EARLY_FRAGMENT_TESTS)
             .src_access_mask(AccessFlags::empty())
-            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+            .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_WRITE | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
             ;
 
-        let attachments = &[color_attachment];
+        let attachments = &[color_attachment, depth_stencil_attachment];
         let subpasses = &[subpass];
         let dependencies = &[dependency];
         let render_pass_info = RenderPassCreateInfo::builder()
@@ -379,7 +400,7 @@ impl<'a> PipelineDataBuilder<'a> {
         let framebuffers = swapchain_data.swapchain_image_views
             .iter()
             .map(|iv| {
-                let attachments = &[*iv];
+                let attachments = &[*iv, swapchain_data.depth_image_view];
                 let create_info = FramebufferCreateInfo::builder()
                     .attachments(attachments)
                     .render_pass(self.value.render_pass)

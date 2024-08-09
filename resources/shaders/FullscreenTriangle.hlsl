@@ -3,6 +3,7 @@
 struct VS_INPUT
 {
     float3 position : POSITION;
+    float3 normal : NORMAL;
     float4 color : COLOR0;
 //     uint vertexIndex : SV_VertexID;
 };
@@ -16,7 +17,8 @@ struct VS_OUTPUT
 {
     float4 position: SV_POSITION;
     float4 fragColor: COLOR0;
-    float4 worldPos: TEXCOORD0;
+    float3 normal: TEXCOORD0;
+    float4 worldPos: TEXCOORD1;
 };
 
 [[vk::push_constant]] VS_PUSH_CONSTANTS pcs;
@@ -40,6 +42,7 @@ VS_OUTPUT main(VS_INPUT input)
 //     float4x4 mvp = mul(mul(transform.projection, transform.view), pcs.model);
 //     result.position = mul(mvp, float4(input.position, 1.0));
 
+    result.normal = input.normal;
     result.fragColor = input.color;
 
     return result;

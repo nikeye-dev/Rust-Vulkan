@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 
 use anyhow::anyhow;
-use cgmath::{Angle, Deg, Matrix, Rad};
+use cgmath::{Angle, Deg, Matrix, Rad, vec3, vec4};
 use log::{debug, error, trace, warn};
 use thiserror::Error;
 use vulkanalia::{Device, Instance, Version, vk};
@@ -10,6 +10,7 @@ use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SHADER_NON_SEMANTIC_INFO_E
 
 use crate::graphics::vulkan::transformation::Matrix4x4;
 use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
+use crate::utils::math::{VECTOR3_BACKWARD, VECTOR3_DOWN, VECTOR3_FORWARD, VECTOR3_LEFT, VECTOR3_RIGHT, VECTOR3_UP, Zero};
 
 pub(crate) const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
@@ -26,27 +27,92 @@ pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 #[error("Suitability Error: {0}.")]
 pub struct CompatibilityError(pub &'static str);
 
-pub static VERTICES: [Vertex; 8] = [
-    Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(0.1, 0.1, 0.1, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(1.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(1.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 1.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 1.0, 1.0)),
+//Cube without normals with shared vertices
+// pub static VERTICES: [Vertex; 8] = [
+//     Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector3::zero(),  Vector4::new(0.1, 0.1, 0.1, 1.0)), //0
+//     Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector3::zero(), Vector4::new(1.0, 0.0, 0.0, 1.0)), //1
+//     Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector3::zero(), Vector4::new(1.0, 1.0, 0.0, 1.0)), //2
+//
+//     Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector3::zero(), Vector4::new(0.0, 1.0, 0.0, 1.0)), //3
+//     Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector3::zero(), Vector4::new(0.0, 0.0, 1.0, 1.0)), //4
+//     Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector3::zero(), Vector4::new(1.0, 0.0, 1.0, 1.0)), //5
+//
+//     Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector3::zero(), Vector4::new(1.0, 1.0, 1.0, 1.0)),  //6
+//     Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector3::zero(), Vector4::new(0.0, 1.0, 1.0, 1.0)), //7
+// ];
+//
+//
+// pub static INDICES: &[u16] = &[
+//     0, 1, 3, 3, 1, 2,
+//     1, 5, 2, 2, 5, 6,
+//     5, 4, 6, 6, 4, 7,
+//     4, 0, 7, 7, 0, 3,
+//     3, 2, 7, 7, 2, 6,
+//     4, 5, 0, 0, 5, 1
+// ];
+
+//Cube with per vertex normals
+pub static VERTICES: [Vertex; 24] = [
+    // Front face
+    Vertex::new(vec3(-1.0, -1.0,  1.0), VECTOR3_BACKWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
+    Vertex::new(vec3( 1.0, -1.0,  1.0), VECTOR3_BACKWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3( 1.0,  1.0,  1.0), VECTOR3_BACKWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3(-1.0,  1.0,  1.0), VECTOR3_BACKWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+
+    // Back face
+    Vertex::new(vec3(-1.0, -1.0, -1.0), VECTOR3_FORWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
+    Vertex::new(vec3( 1.0, -1.0, -1.0), VECTOR3_FORWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3( 1.0,  1.0, -1.0), VECTOR3_FORWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3(-1.0,  1.0, -1.0), VECTOR3_FORWARD, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+
+    // Left face
+    Vertex::new(vec3(-1.0,  1.0,  1.0), VECTOR3_LEFT, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+    Vertex::new(vec3(-1.0,  1.0, -1.0), VECTOR3_LEFT, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3(-1.0, -1.0, -1.0), VECTOR3_LEFT, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3(-1.0, -1.0,  1.0), VECTOR3_LEFT, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
+
+    // Right face
+    Vertex::new(vec3( 1.0,  1.0,  1.0), VECTOR3_RIGHT, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+    Vertex::new(vec3( 1.0,  1.0, -1.0), VECTOR3_RIGHT, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3( 1.0, -1.0, -1.0), VECTOR3_RIGHT, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3( 1.0, -1.0,  1.0), VECTOR3_RIGHT, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
+
+    // Top face
+    Vertex::new(vec3(-1.0,  1.0, -1.0), VECTOR3_UP, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+    Vertex::new(vec3( 1.0,  1.0, -1.0), VECTOR3_UP, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3( 1.0,  1.0,  1.0), VECTOR3_UP, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3(-1.0,  1.0,  1.0), VECTOR3_UP, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
+
+    // Bottom face
+    Vertex::new(vec3(-1.0, -1.0, -1.0), VECTOR3_DOWN, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-left
+    Vertex::new(vec3( 1.0, -1.0, -1.0), VECTOR3_DOWN, vec4(0.5, 0.5, 0.5, 1.0)),  // Top-right
+    Vertex::new(vec3( 1.0, -1.0,  1.0), VECTOR3_DOWN, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-right
+    Vertex::new(vec3(-1.0, -1.0,  1.0), VECTOR3_DOWN, vec4(0.5, 0.5, 0.5, 1.0)),  // Bottom-left
 ];
 
 
 pub static INDICES: &[u16] = &[
-    0, 1, 3, 3, 1, 2,
-    1, 5, 2, 2, 5, 6,
-    5, 4, 6, 6, 4, 7,
-    4, 0, 7, 7, 0, 3,
-    3, 2, 7, 7, 2, 6,
-    4, 5, 0, 0, 5, 1
+    // Front face
+    0,  1,  2,  2,  3,  0,
+
+    // Back face
+    4,  5,  6,  6,  7,  4,
+
+    // Left face
+    8,  9,  10, 10, 11, 8,
+
+    // Right face
+    12, 13, 14, 14, 15, 12,
+
+    // Top face
+    16, 17, 18, 18, 19, 16,
+
+    // Bottom face
+    20, 21, 22, 22, 23, 20,
 ];
 
+
+//Triangle
 // pub static VERTICES: [Vertex; 3] = [
 //     Vertex::new(Vector3::new(-0.5, -0.5, 0.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
 //     Vertex::new(Vector3::new(0.0, 0.5, 0.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
