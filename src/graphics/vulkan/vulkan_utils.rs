@@ -27,14 +27,14 @@ pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub struct CompatibilityError(pub &'static str);
 
 pub static VERTICES: [Vertex; 8] = [
-    Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
-    Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
-    Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, -1.0, -1.0), Vector4::new(0.1, 0.1, 0.1, 1.0)),
+    Vertex::new(Vector3::new(1.0, -1.0, -1.0), Vector4::new(1.0, 0.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, 1.0, -1.0), Vector4::new(1.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, 1.0, -1.0), Vector4::new(0.0, 1.0, 0.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, -1.0, 1.0), Vector4::new(0.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, -1.0, 1.0), Vector4::new(1.0, 0.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(1.0, 1.0, 1.0), Vector4::new(1.0, 1.0, 1.0, 1.0)),
+    Vertex::new(Vector3::new(-1.0, 1.0, 1.0), Vector4::new(0.0, 1.0, 1.0, 1.0)),
 ];
 
 
@@ -113,14 +113,6 @@ pub trait LogicalDeviceDestroy {
 
 pub fn perspective_matrix(fovy: f32, view_width: f32, view_height: f32, near: f32, far: f32,) -> Matrix4x4 {
     let aspect = view_width / view_height;
-    // let tan = Deg::tan(Deg(fovy * 0.5));
-
-    // Matrix4x4::new(
-    //     1.0 / (aspect * tan), 0.0, 0.0, 0.0,
-    //     0.0, 1.0 / tan, 0.0, 0.0,
-    //     0.0, 0.0, (far + near) / (far - near), 1.0,
-    //     0.0, 0.0, (2.0 * far * near) / (far - near), 0.0
-    // )
 
     let half_fov = fovy * 0.5;
     let sin_fov = Rad::sin(Deg(half_fov).into());
@@ -133,7 +125,7 @@ pub fn perspective_matrix(fovy: f32, view_width: f32, view_height: f32, near: f3
     Matrix4x4::new(
         w, 0.0, 0.0, 0.0,
         0.0, h, 0.0, 0.0,
-        0.0, 0.0, range, -range * near,
-        0.0, 0.0, 1.0, 0.0
-    ).transpose()
+        0.0, 0.0, range, 1.0,
+        0.0, 0.0, -range * near, 0.0
+    )
 }

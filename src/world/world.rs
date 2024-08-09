@@ -21,14 +21,16 @@ impl World {
         let test_entity = Entity {
             id: 1,
             name: "test".into(),
-            transform: Transform::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0))
+            transform: Transform::new(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(33.0, 33.0, 33.0))
         };
   
         let entities = vec![
             test_entity
         ];
 
-        let orbit_camera = OrbitCamera::default();
+        let mut orbit_camera = OrbitCamera::default();
+        orbit_camera.camera_mut().transform_mut().set_location_xyz(0.0, 0.0, -105.0);
+
         let start_time = Instant::now();
 
         Self {

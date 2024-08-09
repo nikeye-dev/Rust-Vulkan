@@ -123,9 +123,7 @@ impl ApplicationHandler for App {
 
 impl App {
     pub(crate) fn new(config: Config) -> Self {
-        let mut world = World::new();
-        world.active_camera_mut().transform_mut().set_location_xyz(0.0, 0.0, -5.0);
-        // world.active_camera_mut().transform_mut().set_rotation_euler_deg(0.0, 15.0, 0.0);
+        let world = World::new();
 
         Self {
             config,

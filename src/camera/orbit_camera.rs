@@ -58,6 +58,9 @@ impl OrbitCamera {
                 },
                 KeyCode::ShiftLeft => {
                     self.speed_modifier = 5.0;
+                },
+                KeyCode::ControlLeft => {
+                    self.speed_modifier = 0.1;
                 }
                 _ => ()
             }
@@ -86,6 +89,9 @@ impl OrbitCamera {
                 },
                 KeyCode::ShiftLeft => {
                     self.speed_modifier = 1.0;
+                },
+                KeyCode::ControlLeft => {
+                    self.speed_modifier = 1.0;
                 }
                 _ => ()
             }
@@ -103,7 +109,7 @@ impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
             move_speed: 10.0,
-            rotate_speed: 180.0,
+            rotate_speed: 90.0,
             speed_modifier: 1.0,
             camera: Box::new(Camera::default()),
             current_input: Vector3::zero(),
