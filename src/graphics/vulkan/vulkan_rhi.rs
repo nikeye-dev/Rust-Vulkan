@@ -229,14 +229,13 @@ impl RHIVulkan {
             self.data.logical_device.unmap_memory(buffer_memory)
         };
 
-        let light_pos = vec4(0.0f32, 100., 1000., 0.);
         let light_rot = Quaternion::from(Euler {
             x: Deg(-65.0),
             y: Deg(25.0),
             z: Deg(0.0)
         });
 
-        let light_dir =  light_rot.rotate_vector(VECTOR3_FORWARD).extend(0.0);//(light_pos - Vector4::zero()).normalize();
+        let light_dir =  light_rot.rotate_vector(VECTOR3_FORWARD).extend(0.0);
         let light_illuminance_outer_space = vec4(1., 1., 1., 1.) * 100.0;
 
         let view_state = ViewState {
