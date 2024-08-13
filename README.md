@@ -3,6 +3,7 @@ A WIP Rust and Vulkan API upskilling project.
 The main idea behind this project is to learn Vulkan API and Rust together, based on available tutorial, while also refactoring and extending the project in a way I see being better.
 
 ## Planned:
+- Add controls for atmospheric attributes
 - Refactor the project to seggregate responsibilities better, reduce code size per file, make parts of it reusable and easily extensible.
 
 - :heavy_check_mark: Add depth buffering
