@@ -16,6 +16,13 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 - Add DirectX support
 
 
+## Current Progress:
+![image](https://github.com/user-attachments/assets/4b3c6244-899c-43cf-bcdc-264a4c5225c7)
+
+
+![image](https://github.com/user-attachments/assets/3c23bce8-ef6e-49fc-83b6-26733b931f5d)
+
+
 ## Target Final Result:
 Similar to my Unreal Engine atmosphere shader rendering:
 
