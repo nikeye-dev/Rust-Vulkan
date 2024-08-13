@@ -1,12 +1,12 @@
-use cgmath::InnerSpace;
-use log::debug;
-use winit::event::{DeviceEvent, ElementState};
-use winit::keyboard::{Key, KeyCode, NamedKey};
 use crate::camera::camera::Camera;
 use crate::controls::controls::Controls;
 use crate::utils::math::{Vector2, Vector3, Zero};
 use crate::world::game_object::GameObject;
 use crate::world::transform::OwnedTransform;
+use cgmath::InnerSpace;
+use log::debug;
+use winit::event::ElementState;
+use winit::keyboard::KeyCode;
 
 #[derive(Debug)]
 pub struct OrbitCamera {

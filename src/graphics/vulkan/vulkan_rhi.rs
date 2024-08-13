@@ -1,41 +1,41 @@
-use std::collections::HashSet;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 use std::slice;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{Decomposed, Deg, EuclideanSpace, Euler, InnerSpace, perspective, point3, Quaternion, Rad, Rotation, SquareMatrix, Transform, vec3, vec4, Zero};
-use cgmath::num_traits::real::Real;
-use log::{debug, info, warn};
-use vulkanalia::{Device, Entry, Instance, vk};
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::vk::{Buffer, BufferCreateFlags, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel, CommandBufferResetFlags, CommandBufferUsageFlags, CommandPoolResetFlags, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceV1_0, EntryV1_0, ErrorCode, ExtDebugUtilsExtension, Fence, FenceCreateFlags, FenceCreateInfo, Handle, HasBuilder, IndexType, InstanceV1_0, KhrSwapchainExtension, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, PhysicalDevice, PhysicalDeviceFeatures, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SuccessCode, SurfaceKHR};
-use vulkanalia::window as vk_window;
-use vulkanalia::window::create_surface;
+use cgmath::{vec3, vec4, Deg, Euler, Quaternion, Rotation};
+use vulkanalia::vk;
+use vulkanalia::vk::{ApplicationInfo, ClearColorValue, ClearValue, CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferUsageFlags, CommandPoolResetFlags, DeviceV1_0, ErrorCode, Fence, Handle, HasBuilder, IndexType, KhrSwapchainExtension, MemoryMapFlags, Offset2D, PipelineBindPoint, PipelineStageFlags, PresentInfoKHR, Rect2D, RenderPassBeginInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SuccessCode};
 use winit::window::Window;
 
-use crate::config::config::{GraphicsConfig, LogLevel};
+use crate::config::config::GraphicsConfig;
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::atmopsheric_scattering::{AtmosphereSampleData, ScatteringMedium};
 use crate::graphics::vulkan::transformation::{Matrix4x4, Transformation};
-use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
 use crate::graphics::vulkan::view_state::ViewState;
-use crate::graphics::vulkan::vulkan_data::{SyncObjects, VulkanData};
-use crate::graphics::vulkan::vulkan_pipeline::PipelineDataBuilder;
-use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder, SwapchainSupport};
-use crate::graphics::vulkan::vulkan_utils::{CompatibilityError, debug_callback, DEVICE_EXTENSIONS, INDICES, LogicalDeviceDestroy, MAX_FRAMES_IN_FLIGHT, PERSPECTIVE_CORRECTION, perspective_matrix, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED, VALIDATION_LAYER, VERTICES};
-use crate::utils::math::{VECTOR3_BACKWARD, VECTOR3_FORWARD};
+use crate::graphics::vulkan::vulkan_sync_objects::SyncObjects;
+use crate::graphics::vulkan::vulkan_pipeline::{PipelineData, PipelineDataBuilder};
+use crate::graphics::vulkan::vulkan_rhi_data::{VulkanRHIData, VulkanRHIDataBuilder};
+use crate::graphics::vulkan::vulkan_swapchain::{SwapchainData, SwapchainDataBuilder};
+use crate::graphics::vulkan::vulkan_utils::{perspective_matrix, RHIDestroy, INDICES, PERSPECTIVE_CORRECTION, VALIDATION_ENABLED};
+use crate::utils::math::VECTOR3_FORWARD;
 use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
 pub struct RHIVulkan {
+    max_frames_in_flight: usize,
+
     is_destroyed: bool,
     config: GraphicsConfig,
-    data: VulkanData,
     frame_index: usize,
-    world: Option<Arc<RwLock<World>>>
+    world: Option<Arc<RwLock<World>>>,
+
+    //New Stuff
+    data: VulkanRHIData,
+    swapchain_data: SwapchainData,
+    pipeline_data: PipelineData,
+    sync_objects: SyncObjects,
 }
 
 impl RHI for RHIVulkan {
@@ -49,14 +49,14 @@ impl RHI for RHIVulkan {
     }
 
     fn render(&mut self, window: &Window) -> Result<()> {
-        let fence = self.data.sync_objects.in_flight_fences[self.frame_index];
+        let fence = self.sync_objects.in_flight_fences[self.frame_index];
 
         unsafe {
-            self.data.logical_device.wait_for_fences(&[fence], true, u64::MAX).unwrap();
+            self.data.logical_device.wait_for_fences(&[fence], true, u64::MAX)?;
         }
 
         let next_image_result = unsafe {
-            self.data.logical_device.acquire_next_image_khr(self.data.swapchain_data.swapchain, u64::MAX, self.data.sync_objects.image_available_semaphores[self.frame_index], Fence::null())
+            self.data.logical_device.acquire_next_image_khr(self.swapchain_data.swapchain, u64::MAX, self.sync_objects.image_available_semaphores[self.frame_index], Fence::null())
         };
 
         let image_index = match next_image_result {
@@ -65,21 +65,21 @@ impl RHI for RHIVulkan {
             Err(e) => return Err(anyhow!(e))
         };
 
-        if !self.data.sync_objects.images_in_flight[image_index as usize].is_null() {
+        if !self.sync_objects.images_in_flight[image_index as usize].is_null() {
             unsafe {
-                self.data.logical_device.wait_for_fences(&[self.data.sync_objects.images_in_flight[image_index as usize]], true, u64::MAX).unwrap();
+                self.data.logical_device.wait_for_fences(&[self.sync_objects.images_in_flight[image_index as usize]], true, u64::MAX)?;
             }
         }
 
-        self.data.sync_objects.set_image_fence(image_index as usize, fence);
+        self.sync_objects.set_image_fence(image_index as usize, fence);
 
-        self.update_command_buffers(image_index as usize);
-        self.update_uniform_buffers(image_index as usize);
+        self.update_command_buffers(image_index as usize)?;
+        self.update_uniform_buffers(image_index as usize)?;
 
-        let wait_semaphores = &[self.data.sync_objects.image_available_semaphores[self.frame_index]];
+        let wait_semaphores = &[self.sync_objects.image_available_semaphores[self.frame_index]];
         let wait_stages = &[PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.data.pipeline_data.primary_command_buffers[image_index as usize]];
-        let signal_semaphores = &[self.data.sync_objects.render_finished_semaphores[self.frame_index]];
+        let command_buffers = &[self.pipeline_data.primary_command_buffers[image_index as usize]];
+        let signal_semaphores = &[self.sync_objects.render_finished_semaphores[self.frame_index]];
         let submit_info = SubmitInfo::builder()
             .command_buffers(command_buffers)
             .signal_semaphores(signal_semaphores)
@@ -88,11 +88,11 @@ impl RHI for RHIVulkan {
         ;
 
         unsafe {
-            self.data.logical_device.reset_fences(&[fence]).unwrap();
-            self.data.logical_device.queue_submit(self.data.graphics_queue, &[submit_info], self.data.sync_objects.in_flight_fences[self.frame_index]).unwrap();
+            self.data.logical_device.reset_fences(&[fence])?;
+            self.data.logical_device.queue_submit(self.data.graphics_queue, &[submit_info], self.sync_objects.in_flight_fences[self.frame_index])?;
         }
 
-        let swapchains = &[self.data.swapchain_data.swapchain];
+        let swapchains = &[self.swapchain_data.swapchain];
         let image_indices = &[image_index];
         let present_info = PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
@@ -104,18 +104,24 @@ impl RHI for RHIVulkan {
 
         //ToDo: Handle swapchain invalidation better - resize, minimize etc
         if present_result == Ok(SuccessCode::SUBOPTIMAL_KHR) || present_result == Err(ErrorCode::OUT_OF_DATE_KHR) {
-            self.recreate_swapchain(window).unwrap();
+            self.recreate_swapchain(window)?;
         } else if let Err(e) = present_result {
             return Err(anyhow!(e));
         }
 
-        self.frame_index = (self.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
+        self.frame_index = (self.frame_index + 1) % self.max_frames_in_flight;
 
         Ok(())
     }
 
     fn destroy(&mut self) {
         self.is_destroyed = true;
+
+        unsafe { self.data.logical_device.device_wait_idle() }.unwrap();
+
+        self.sync_objects.destroy(&self.data);
+        self.pipeline_data.destroy(&self.data);
+        self.swapchain_data.destroy(&self.data);
         self.data.destroy();
     }
 
@@ -130,85 +136,9 @@ impl RHI for RHIVulkan {
 
 impl RHIVulkan {
     pub fn new(window: &Window, config: GraphicsConfig) -> Self {
-        let loader = unsafe { LibloadingLoader::new(LIBRARY) }.unwrap();
-        let entry = unsafe { Entry::new(loader) }.unwrap();
-        let instance = Self::create_instance(window, &entry, &config).unwrap();
+        const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-        let mut messenger = DebugUtilsMessengerEXT::default();
-        if VALIDATION_ENABLED {
-            let severity = match config.log_level {
-                LogLevel::Verbose => DebugUtilsMessageSeverityFlagsEXT::VERBOSE,
-                LogLevel::Info => DebugUtilsMessageSeverityFlagsEXT::INFO,
-                LogLevel::Warning => DebugUtilsMessageSeverityFlagsEXT::WARNING,
-                LogLevel::Error => DebugUtilsMessageSeverityFlagsEXT::ERROR
-            };
-
-            let debug_info = DebugUtilsMessengerCreateInfoEXT::builder()
-                .message_severity(severity)
-                .message_type(DebugUtilsMessageTypeFlagsEXT::all())
-                .user_callback(Some(debug_callback));
-
-            messenger = unsafe { instance.create_debug_utils_messenger_ext(&debug_info, None) }.unwrap();
-        }
-
-        let surface = unsafe { create_surface(&instance, &window, &window) }.unwrap();
-
-        let physical_device = Self::pick_physical_device(&instance, surface).unwrap();
-        let logical_device = Self::create_logical_device(&instance, physical_device, surface);
-
-        let queue_family_indices = QueueFamilyIndices::get(&instance, physical_device, surface).unwrap();
-
-        let graphics_queue = unsafe { logical_device.get_device_queue(queue_family_indices.graphics, 0) };
-        let present_queue = unsafe { logical_device.get_device_queue(queue_family_indices.present, 0) };
-
-        let swapchain_data = SwapchainDataBuilder::default()
-            .window(window)
-            .instance(&instance)
-            .surface(surface)
-            .physical_device(physical_device)
-            .logical_device(&logical_device)
-            .build()
-            .unwrap();
-
-        let pipeline_data = PipelineDataBuilder::default()
-            .window(window)
-            .instance(&instance)
-            .surface(surface)
-            .physical_device(physical_device)
-            .logical_device(&logical_device)
-            .swapchain_data(&swapchain_data)
-            .graphics_queue(graphics_queue)
-            .build()
-            .unwrap();
-
-        let sync_objects = SyncObjects::create(&logical_device, &swapchain_data, MAX_FRAMES_IN_FLIGHT);
-
-        let data = VulkanData{
-            entry,
-            instance,
-            messenger,
-            surface,
-            physical_device,
-            logical_device,
-            graphics_queue,
-            present_queue,
-            swapchain_data,
-            pipeline_data,
-            sync_objects,
-
-        };
-
-        Self {
-            is_destroyed: false,
-            config,
-            data,
-            frame_index: 0,
-            world: None
-        }
-    }
-
-    fn create_instance(window: &Window, entry: &Entry, config: &GraphicsConfig) -> Result<Instance> {
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = ApplicationInfo::builder()
             .application_version(vk::make_version(0, 1, 0))
             .api_version(vk::make_version(1, 0, 0))
             .engine_version(vk::make_version(1, 0, 0))
@@ -216,155 +146,35 @@ impl RHIVulkan {
             .engine_name(b"Test Engine")
             .build();
 
-        let mut extensions = vk_window::get_required_instance_extensions(window)
-            .iter()
-            .map(|e| e.as_ptr())
-            .collect::<Vec<_>>();
+        let rhi_data = VulkanRHIDataBuilder::default()
+            .application_info(app_info)
+            .config(config)
+            .validation(VALIDATION_ENABLED)
+            .build(window).unwrap();
 
-        //Enable compatibility extensions
-        // Required by Vulkan SDK on macOS since 1.3.216.
-        let flags = if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION
-        {
-            info!("Enabling extensions for macOS portability.");
-            extensions.push(vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_EXTENSION.name.as_ptr());
-            extensions.push(vk::KHR_PORTABILITY_ENUMERATION_EXTENSION.name.as_ptr());
-            vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
-        } else {
-            vk::InstanceCreateFlags::empty()
-        };
-        //
+        let swapchain_data = SwapchainDataBuilder::default()
+            .build(window, &rhi_data)
+            .unwrap();
 
-        //Validation layers
-        let available_layers = unsafe { entry.enumerate_instance_layer_properties() }
-            .unwrap()
-            .iter()
-            .map(|l| l.layer_name)
-            .collect::<HashSet<_>>();
+        let pipeline_data = PipelineDataBuilder::new(&rhi_data, &swapchain_data)
+            .shader(ShaderStageFlags::VERTEX, "./resources/shaders/compiled/basic_vert.spv")
+            .shader(ShaderStageFlags::FRAGMENT, "./resources/shaders/compiled/basic_frag.spv")
+            .build()
+            .unwrap();
 
-        if VALIDATION_ENABLED {
-            if !available_layers.contains(&VALIDATION_LAYER) {
-                return Err(anyhow!("Validation layer requested but not supported."));
-            }
+        let sync_objects = SyncObjects::create(&rhi_data.logical_device, &swapchain_data, MAX_FRAMES_IN_FLIGHT);
 
-            extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
+        Self {
+            max_frames_in_flight: MAX_FRAMES_IN_FLIGHT,
+            is_destroyed: false,
+            config,
+            frame_index: 0,
+            world: None,
+            data: rhi_data,
+            swapchain_data,
+            pipeline_data,
+            sync_objects
         }
-
-        let layers = if VALIDATION_ENABLED {
-            vec![VALIDATION_LAYER.as_ptr()]
-        } else {
-            Vec::new()
-        };
-        //
-
-        let instance_info = vk::InstanceCreateInfo::builder()
-            .application_info(&app_info)
-            .enabled_layer_names(&layers)
-            .enabled_extension_names(&extensions)
-            .flags(flags);
-
-        //Debug
-        let mut debug_info = DebugUtilsMessengerCreateInfoEXT::builder();
-        if VALIDATION_ENABLED {
-            let severity = match config.log_level {
-                LogLevel::Verbose => DebugUtilsMessageSeverityFlagsEXT::VERBOSE,
-                LogLevel::Info => DebugUtilsMessageSeverityFlagsEXT::INFO,
-                LogLevel::Warning => DebugUtilsMessageSeverityFlagsEXT::WARNING,
-                LogLevel::Error => DebugUtilsMessageSeverityFlagsEXT::ERROR
-            };
-            println!("Severity: {:?}", severity);
-            debug_info.message_severity(severity)
-                      .message_type(DebugUtilsMessageTypeFlagsEXT::all())
-                      .user_callback(Some(debug_callback));
-
-            instance_info.push_next(&mut debug_info);
-
-            info!("Added debug callback to Vulkan with level {:?}", severity);
-        }
-        //
-
-        let result = unsafe { entry.create_instance(&instance_info, None) }.unwrap();
-        Ok(result)
-    }
-
-    fn pick_physical_device(instance: &Instance, surface: SurfaceKHR) -> Result<PhysicalDevice> {
-        for physical_device in unsafe {instance.enumerate_physical_devices()?} {
-            let properties = unsafe { instance.get_physical_device_properties(physical_device) };
-
-            match Self::check_physical_device_compatibility(instance, physical_device, surface) {
-                Ok(_) => {
-                    info!("Selected physical device (`{}`).", properties.device_name);
-                    return Ok(physical_device);
-                }
-                Err(error) => warn!("Skipping physical device (`{}`): {}", properties.device_name, error)
-            }
-        }
-
-        Err(anyhow!(CompatibilityError("Failed to find compatible physical device")))
-    }
-
-    fn check_physical_device_compatibility(instance: &Instance, physical_device: PhysicalDevice, surface: SurfaceKHR) -> Result<()> {
-        let _ = QueueFamilyIndices::get(instance, physical_device, surface)?;
-        let _ = Self::check_physical_device_extensions(instance, physical_device)?;
-
-        let support = SwapchainSupport::get(instance, physical_device, surface).unwrap();
-        if support.formats.is_empty() || support.present_modes.is_empty() {
-            return Err(anyhow!(CompatibilityError("Insufficient swapchain support.")));
-        }
-
-        Ok(())
-    }
-
-    fn check_physical_device_extensions(instance: &Instance, physical_device: PhysicalDevice) -> Result<()> {
-        let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device, None).unwrap().iter().map(|e| e.extension_name).collect::<HashSet<_>>() };
-        //Check for graphics commands
-        let is_supported = DEVICE_EXTENSIONS.iter().all(|e| extensions.contains(e));
-        if is_supported {
-            Ok(())
-        }
-        else {
-            Err(anyhow!(CompatibilityError("Missing required queue family extensions.")))
-        }
-    }
-
-    //ToDo: Maybe instance method - e.g. initialize?
-    fn create_logical_device(instance: &Instance, physical_device: PhysicalDevice, surface: SurfaceKHR) -> Device {
-        let queue_family_indices = QueueFamilyIndices::get(instance, physical_device, surface).unwrap();
-        let mut indices = HashSet::new();
-
-        indices.insert(queue_family_indices.graphics);
-        indices.insert(queue_family_indices.present);
-
-        let layers = if VALIDATION_ENABLED {
-            vec![VALIDATION_LAYER.as_ptr()]
-        } else {
-            vec![]
-        };
-
-        let extensions = DEVICE_EXTENSIONS
-            .iter()
-            .map(|n| n.as_ptr())
-            .collect::<Vec<_>>();
-
-        let features = PhysicalDeviceFeatures::builder();
-
-        let queue_priorities = &[1.0];
-        let queue_infos =
-            indices.iter().map(|i| {
-                DeviceQueueCreateInfo::builder()
-                    .queue_family_index(*i)
-                    .queue_priorities(queue_priorities)
-            })
-                .collect::<Vec<_>>();
-
-        let device_info = DeviceCreateInfo::builder()
-            .queue_create_infos(&queue_infos)
-            .enabled_layer_names(&layers)
-            .enabled_extension_names(&extensions)
-            .enabled_features(&features);
-
-        let device = unsafe { instance.create_device(physical_device, &device_info, None) }.unwrap();
-
-        device
     }
 
     fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
@@ -372,61 +182,48 @@ impl RHIVulkan {
             self.data.logical_device.device_wait_idle()?;
         }
 
-        self.data.swapchain_data.destroy(&self.data.logical_device);
+        self.swapchain_data.destroy(&self.data);
 
         //ToDo: Reuse what can be reused (e.g. command buffers)
-        self.data.pipeline_data.destroy(&self.data.logical_device);
+        self.pipeline_data.destroy(&self.data);
 
-        self.data.sync_objects.destroy(&self.data.logical_device);
+        self.sync_objects.destroy(&self.data);
 
-        self.data.swapchain_data = SwapchainDataBuilder::default()
-            .window(window)
-            .instance(&self.data.instance)
-            .surface(self.data.surface)
-            .physical_device(self.data.physical_device)
-            .logical_device(&self.data.logical_device)
-            .build()
-            .unwrap();
+        self.swapchain_data = SwapchainDataBuilder::default()
+            .build(window, &self.data)?;
 
-        self.data.pipeline_data = PipelineDataBuilder::default()
-            .window(window)
-            .instance(&self.data.instance)
-            .surface(self.data.surface)
-            .physical_device(self.data.physical_device)
-            .logical_device(&self.data.logical_device)
-            .swapchain_data(&self.data.swapchain_data)
-            .graphics_queue(self.data.graphics_queue)
-            .build()
-            .unwrap();
+        self.pipeline_data = PipelineDataBuilder::new(&self.data, &self.swapchain_data)
+            .shader(ShaderStageFlags::VERTEX, "../../../resources/shaders/compiled/basic_vert.spv")
+            .shader(ShaderStageFlags::FRAGMENT, "../../../resources/shaders/compiled/basic_frag.spv")
+            .build()?;
 
-        self.data.sync_objects = SyncObjects::create(&self.data.logical_device, &self.data.swapchain_data, MAX_FRAMES_IN_FLIGHT);
+        self.sync_objects = SyncObjects::create(&self.data.logical_device, &self.swapchain_data, self.max_frames_in_flight);
 
         Ok(())
     }
 
     //ToDo: Add transforms and move from here
-    fn update_uniform_buffers(&self, image_index: usize) {
+    fn update_uniform_buffers(&self, image_index: usize) -> Result<()> {
         let world = self.world.as_ref().unwrap().read().unwrap();
         let camera = world.active_camera();
         let view = camera.view_matrix();
 
         let camera_pos = camera.transform().location();
         let projection = PERSPECTIVE_CORRECTION * perspective_matrix(camera.view().fov,
-                                                        self.data.swapchain_data.swapchain_extent.width as f32,
-                                                        self.data.swapchain_data.swapchain_extent.height as f32,
+                                                        self.swapchain_data.swapchain_extent.width as f32,
+                                                        self.swapchain_data.swapchain_extent.height as f32,
                                                         camera.view().near,
                                                         camera.view().far);
 
         let transformation = Transformation::new(view, projection);
 
         unsafe {
-            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][0];
+            let buffer_memory = self.pipeline_data.uniform_buffers_memory[image_index][0];
             let memory = self.data.logical_device.map_memory(
                 buffer_memory,
                 0,
                 size_of::<Transformation>() as u64,
-                MemoryMapFlags::empty())
-                .unwrap();
+                MemoryMapFlags::empty())?;
 
             copy_nonoverlapping(&transformation, memory.cast(), 1);
             self.data.logical_device.unmap_memory(buffer_memory)
@@ -449,13 +246,12 @@ impl RHIVulkan {
         };
 
         unsafe {
-            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][1];
+            let buffer_memory = self.pipeline_data.uniform_buffers_memory[image_index][1];
             let memory = self.data.logical_device.map_memory(
                 buffer_memory,
                 0,
                 size_of::<ViewState>() as u64,
-                MemoryMapFlags::empty())
-                .unwrap();
+                MemoryMapFlags::empty())?;
 
             copy_nonoverlapping(&view_state, memory.cast(), 1);
             self.data.logical_device.unmap_memory(buffer_memory)
@@ -466,13 +262,12 @@ impl RHIVulkan {
         let medium = ScatteringMedium::new(0.2, scattering_ray);
 
         unsafe {
-            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][2];
+            let buffer_memory = self.pipeline_data.uniform_buffers_memory[image_index][2];
             let memory = self.data.logical_device.map_memory(
                 buffer_memory,
                 0,
                 size_of::<ScatteringMedium>() as u64,
-                MemoryMapFlags::empty())
-                .unwrap();
+                MemoryMapFlags::empty())?;
 
             copy_nonoverlapping(&medium, memory.cast(), 1);
             self.data.logical_device.unmap_memory(buffer_memory)
@@ -492,28 +287,31 @@ impl RHIVulkan {
         };
 
         unsafe {
-            let buffer_memory = self.data.pipeline_data.uniform_buffers_memory[image_index][3];
+            let buffer_memory = self.pipeline_data.uniform_buffers_memory[image_index][3];
             let memory = self.data.logical_device.map_memory(
                 buffer_memory,
                 0,
                 size_of::<AtmosphereSampleData>() as u64,
-                MemoryMapFlags::empty())
-                .unwrap();
+                MemoryMapFlags::empty())?;
 
             copy_nonoverlapping(&atmospheric_sample_data, memory.cast(), 1);
             self.data.logical_device.unmap_memory(buffer_memory)
         };
+
+        Ok(())
     }
 
-    fn update_command_buffers(&mut self, image_index: usize) {
-        let command_pool = self.data.pipeline_data.command_pools[image_index];
-        unsafe { self.data.logical_device.reset_command_pool(command_pool, CommandPoolResetFlags::empty()) }.unwrap();
+    fn update_command_buffers(&mut self, image_index: usize) -> Result<()> {
+        let command_pool = self.pipeline_data.command_pools[image_index];
+        unsafe { self.data.logical_device.reset_command_pool(command_pool, CommandPoolResetFlags::empty()) }?;
 
-        let command_buffer = self.data.pipeline_data.primary_command_buffers.get(image_index).unwrap();
-        self.update_command_buffer(image_index, *command_buffer);
+        let command_buffer = self.pipeline_data.primary_command_buffers.get(image_index).unwrap();
+        self.update_command_buffer(image_index, *command_buffer)?;
+
+        Ok(())
     }
 
-    fn update_command_buffer(&mut self, image_index: usize, command_buffer: CommandBuffer) {
+    fn update_command_buffer(&mut self, image_index: usize, command_buffer: CommandBuffer) -> Result<()> {
         let command_buffer_inheritance_info = CommandBufferInheritanceInfo::builder();
 
         let command_buffer_begin_info = CommandBufferBeginInfo::builder()
@@ -524,7 +322,7 @@ impl RHIVulkan {
 
 
         let render_area = Rect2D::builder()
-            .extent(self.data.swapchain_data.swapchain_extent)
+            .extent(self.swapchain_data.swapchain_extent)
             .offset(Offset2D::default())
             ;
 
@@ -540,30 +338,32 @@ impl RHIVulkan {
 
         let clear_values = &[color_clear_value, depth_clear_value];
         let render_pass_begin_info = RenderPassBeginInfo::builder()
-            .render_pass(self.data.pipeline_data.render_pass)
-            .framebuffer(self.data.pipeline_data.framebuffers[image_index])
+            .render_pass(self.pipeline_data.render_pass)
+            .framebuffer(self.pipeline_data.framebuffers[image_index])
             .render_area(render_area)
             .clear_values(clear_values)
             ;
 
         unsafe {
-            logical_device.begin_command_buffer(command_buffer, &command_buffer_begin_info).unwrap();
+            logical_device.begin_command_buffer(command_buffer, &command_buffer_begin_info)?;
             logical_device.cmd_begin_render_pass(command_buffer, &render_pass_begin_info, SubpassContents::SECONDARY_COMMAND_BUFFERS);
         }
 
-        let secondary_command_buffer = self.data.pipeline_data.get_or_allocate_secondary_buffer(image_index, 0, &self.data.logical_device);
-        self.update_secondary_command_buffer(secondary_command_buffer, image_index);
+        let secondary_command_buffer = self.pipeline_data.get_or_allocate_secondary_buffer(image_index, 0, &self.data.logical_device);
+        self.update_secondary_command_buffer(secondary_command_buffer, image_index)?;
 
         unsafe {
             logical_device.cmd_execute_commands(command_buffer, &[secondary_command_buffer]);
 
             logical_device.cmd_end_render_pass(command_buffer);
-            logical_device.end_command_buffer(command_buffer).unwrap();
+            logical_device.end_command_buffer(command_buffer)?;
         }
+
+        Ok(())
     }
 
     //ToDo: Make async and parallelize
-    fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) {
+    fn update_secondary_command_buffer(&self, command_buffer: CommandBuffer, image_index: usize) -> Result<()> {
         //ToDo:
         let world = self.world.as_ref().unwrap().read().unwrap();
         let entities = world.get_entities();
@@ -574,9 +374,9 @@ impl RHIVulkan {
         // let command_buffer = self.get_or_add_secondary_buffer(&image_index, buffer_index);
 
         let inheritance_info = CommandBufferInheritanceInfo::builder()
-            .render_pass(self.data.pipeline_data.render_pass)
+            .render_pass(self.pipeline_data.render_pass)
             .subpass(0)
-            .framebuffer(self.data.pipeline_data.framebuffers[image_index])
+            .framebuffer(self.pipeline_data.framebuffers[image_index])
             ;
 
         let info = CommandBufferBeginInfo::builder()
@@ -586,20 +386,22 @@ impl RHIVulkan {
 
         let logical_device = &self.data.logical_device;
         unsafe {
-            logical_device.begin_command_buffer(command_buffer, &info).unwrap();
-            logical_device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::GRAPHICS, self.data.pipeline_data.pipeline);
+            logical_device.begin_command_buffer(command_buffer, &info)?;
+            logical_device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::GRAPHICS, self.pipeline_data.pipeline);
 
-            logical_device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.data.pipeline_data.vertex_buffer], &[0]);
-            logical_device.cmd_bind_index_buffer(command_buffer, self.data.pipeline_data.index_buffer, 0, IndexType::UINT16);
+            logical_device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.pipeline_data.vertex_buffer], &[0]);
+            logical_device.cmd_bind_index_buffer(command_buffer, self.pipeline_data.index_buffer, 0, IndexType::UINT16);
 
-            logical_device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::GRAPHICS, self.data.pipeline_data.pipeline_layout, 0, &[self.data.pipeline_data.descriptor_sets[image_index]], &[]);
+            logical_device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::GRAPHICS, self.pipeline_data.pipeline_layout, 0, &[self.pipeline_data.descriptor_sets[image_index]], &[]);
 
-            logical_device.cmd_push_constants(command_buffer, self.data.pipeline_data.pipeline_layout, ShaderStageFlags::VERTEX, 0, model_bytes);
+            logical_device.cmd_push_constants(command_buffer, self.pipeline_data.pipeline_layout, ShaderStageFlags::VERTEX, 0, model_bytes);
 
             logical_device.cmd_draw_indexed(command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 
-            logical_device.end_command_buffer(command_buffer).unwrap()
+            logical_device.end_command_buffer(command_buffer)?
         }
+
+        Ok(())
     }
 }
 

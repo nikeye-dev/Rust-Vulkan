@@ -1,6 +1,4 @@
-use cgmath::{EuclideanSpace, Point3, point3, SquareMatrix};
-
-use crate::utils::math::{Matrix4x4, Vector3};
+use crate::utils::math::Matrix4x4;
 use crate::world::transform::{OwnedTransform, Transform};
 
 #[derive(Default, Debug, Copy, Clone)]

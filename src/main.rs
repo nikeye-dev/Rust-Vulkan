@@ -15,7 +15,7 @@ mod controls;
 async fn main() {
     pretty_env_logger::init();
 
-    let config = load_config().await;
+    let config = load_config().await.unwrap();
     debug!("{:?}", config);
 
     let mut app = App::new(config);

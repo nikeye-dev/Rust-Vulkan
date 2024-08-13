@@ -1,5 +1,5 @@
-use std::time::Instant;
 use cgmath::InnerSpace;
+use std::time::Instant;
 
 use crate::camera::camera::Camera;
 use crate::camera::orbit_camera::OrbitCamera;
@@ -73,7 +73,7 @@ impl GameObject for World {
         let entity = self.entities.get_mut(0).unwrap();
         let mut location = entity.transform.location();
         location = location + Vector3::new(1.0, 1.0, 1.0).normalize() * delta_time;
-        if(location.magnitude() > 5.0) {
+        if location.magnitude() > 5.0 {
             location = Vector3::zero();
         }
 

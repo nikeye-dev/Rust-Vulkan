@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, Matrix4, One, Rotation3, Transform as cgTransform};
+use cgmath::{InnerSpace, One, Rotation3, Transform as cgTransform};
 
 use crate::utils::math::{Deg, Euler, Matrix4x4, Quaternion, Vector3, Zero};
 

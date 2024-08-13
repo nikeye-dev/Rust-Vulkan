@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -23,7 +24,8 @@ pub enum LogLevel {
 
 #[derive(Default, Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct GraphicsConfig {
-    pub log_level: LogLevel
+    pub log_level: LogLevel,
+    pub validation_enabled: bool,
 }
 
 #[derive(Default, Serialize, Deserialize, Debug)]
@@ -31,9 +33,9 @@ pub struct Config {
     pub graphics: HashMap<GraphicsApiType, GraphicsConfig>
 }
 
-pub async fn load_config() -> Config {
+pub async fn load_config() -> Result<Config> {
     let path = Path::new("./resources/config/default_config.json");
 
-    let config_json = tokio::fs::read_to_string(path).await.unwrap();
-    serde_json::from_str::<Config>(&config_json).unwrap()
+    let config_json = tokio::fs::read_to_string(path).await?;
+    Ok(serde_json::from_str::<Config>(&config_json)?)
 }

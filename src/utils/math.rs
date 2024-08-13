@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 pub use cgmath::Deg;
 use cgmath::Rad;
-pub use cgmath::SquareMatrix;
 pub use cgmath::Zero;
 
 pub type Vector2 = cgmath::Vector2<f32>;

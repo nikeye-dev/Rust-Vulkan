@@ -1,25 +1,20 @@
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::Instant;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use cgmath::Vector2;
-use log::{debug, info};
+use log::info;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalSize, Size};
 use winit::error::EventLoopError;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
+use winit::keyboard::{Key, NamedKey, PhysicalKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowId};
 
 use crate::config::config::{Config, GraphicsApiType};
-use crate::controls::controls::Controls;
 use crate::graphics::rhi::RHI;
 use crate::graphics::vulkan::vulkan_rhi::RHIVulkan;
-use crate::utils::math::Vector3;
 use crate::world::game_object::GameObject;
-use crate::world::transform::OwnedTransform;
 use crate::world::world::World;
 
 pub struct App {

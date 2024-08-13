@@ -1,7 +1,8 @@
 {
   "graphics" : {
       "vulkan": {
-        "log_level": 1
+        "log_level": 1,
+        "validation_enabled": true
       }
     }
 }

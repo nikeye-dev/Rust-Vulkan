@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
-use vulkanalia::vk::{Format, HasBuilder, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate};
 use crate::utils::math::Zero;
+use vulkanalia::vk::{Format, HasBuilder, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate};
 
 pub type Vector2 = cgmath::Vector2<f32>;
 pub type Vector3 = cgmath::Vector3<f32>;

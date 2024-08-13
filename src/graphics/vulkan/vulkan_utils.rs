@@ -2,15 +2,16 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 
 use anyhow::anyhow;
-use cgmath::{Angle, Deg, Matrix, Rad, vec3, vec4};
+use cgmath::{vec3, vec4, Angle, Deg, Rad};
 use log::{debug, error, trace, warn};
 use thiserror::Error;
-use vulkanalia::{Device, Instance, Version, vk};
-use vulkanalia::vk::{ExtensionName, InstanceV1_0, KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION, KHR_SWAPCHAIN_EXTENSION, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR};
+use vulkanalia::vk::{ExtensionName, InstanceV1_0, KhrSurfaceExtension, PhysicalDevice, QueueFlags, SurfaceKHR, KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION, KHR_SWAPCHAIN_EXTENSION};
+use vulkanalia::{vk, Instance, Version};
 
 use crate::graphics::vulkan::transformation::Matrix4x4;
-use crate::graphics::vulkan::vertex::{Vector3, Vector4, Vertex};
-use crate::utils::math::{VECTOR3_BACKWARD, VECTOR3_DOWN, VECTOR3_FORWARD, VECTOR3_LEFT, VECTOR3_RIGHT, VECTOR3_UP, Zero};
+use crate::graphics::vulkan::vertex::Vertex;
+use crate::graphics::vulkan::vulkan_rhi_data::VulkanRHIData;
+use crate::utils::math::{VECTOR3_BACKWARD, VECTOR3_DOWN, VECTOR3_FORWARD, VECTOR3_LEFT, VECTOR3_RIGHT, VECTOR3_UP};
 
 pub(crate) const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
@@ -20,8 +21,6 @@ pub(crate) const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 pub(crate) const DEVICE_EXTENSIONS: &[ExtensionName] = &[KHR_SWAPCHAIN_EXTENSION.name, KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name];
-
-pub(crate) const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 #[derive(Debug, Error)]
 #[error("Suitability Error: {0}.")]
@@ -173,8 +172,8 @@ impl QueueFamilyIndices {
 }
 
 //ToDo: Something more sensible
-pub trait LogicalDeviceDestroy {
-    fn destroy(&mut self, logical_device: &Device);
+pub trait RHIDestroy {
+    fn destroy(&mut self, rhi_data: &VulkanRHIData);
 }
 
 pub fn perspective_matrix(fovy: f32, view_width: f32, view_height: f32, near: f32, far: f32,) -> Matrix4x4 {
