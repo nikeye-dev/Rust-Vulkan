@@ -146,7 +146,8 @@ float3 SingleScattering(const float3 worldPos, float3 viewPos)
 struct PS_INPUT
 {
     float4 fragColor: COLOR;
-    float4 worldPos : TEXCOORD0;
+    float3 normal: TEXCOORD0;
+    float4 worldPos : TEXCOORD1;
 };
 
 struct PS_OUTPUT

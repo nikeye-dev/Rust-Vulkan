@@ -31,8 +31,6 @@ impl OrbitCamera {
     pub fn handle_input_key(&mut self, key_code: KeyCode, state: ElementState) {
 
         if state == ElementState::Pressed {
-            debug!("Pressed: {:?}", key_code);
-
             match key_code {
                 KeyCode::KeyW => {
                     self.add_input(Vector3::new(0.0, 0.0, 1.0));
@@ -41,19 +39,15 @@ impl OrbitCamera {
                     self.add_input(Vector3::new(0.0, 0.0, -1.0));
                 },
                 KeyCode::KeyA => {
-                    //ToDo: why flipped?
                     self.add_input(Vector3::new(-1.0, 0.0, 0.0));
                 },
                 KeyCode::KeyD => {
-                    //ToDo: why flipped?
                     self.add_input(Vector3::new(1.0, 0.0, 0.0));
                 },
                 KeyCode::KeyE => {
-                    //ToDo: why flipped?
                     self.add_input(Vector3::new(0.0, 1.0, 0.0));
                 },
                 KeyCode::KeyQ => {
-                    //ToDo: why flipped?
                     self.add_input(Vector3::new(0.0, -1.0, 0.0));
                 },
                 KeyCode::ShiftLeft => {
@@ -66,8 +60,6 @@ impl OrbitCamera {
             }
         }
         else {
-            debug!("Released: {:?}", key_code);
-
             match key_code {
                 KeyCode::KeyW => {
                     self.current_input.z = 0.0;

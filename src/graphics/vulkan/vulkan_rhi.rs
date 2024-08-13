@@ -158,7 +158,7 @@ impl RHIVulkan {
 
         let pipeline_data = PipelineDataBuilder::new(&rhi_data, &swapchain_data)
             .shader(ShaderStageFlags::VERTEX, "./resources/shaders/compiled/basic_vert.spv")
-            .shader(ShaderStageFlags::FRAGMENT, "./resources/shaders/compiled/basic_frag.spv")
+            .shader(ShaderStageFlags::FRAGMENT, "./resources/shaders/compiled/atmosphere_frag.spv")
             .build()
             .unwrap();
 
