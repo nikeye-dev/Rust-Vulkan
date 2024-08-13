@@ -17,6 +17,8 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 
 
 ## Current Progress:
+Scale is reduced for simplicity but it currently introduces compresses scattering calculations and result is not as smooth as it should be. 
+
 ![image](https://github.com/user-attachments/assets/4b3c6244-899c-43cf-bcdc-264a4c5225c7)
 
 
