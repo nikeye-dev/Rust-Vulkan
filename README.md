@@ -4,6 +4,7 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 
 ## Planned:
 - Add controls for atmospheric attributes
+- Separate render thread
 - Refactor the project to seggregate responsibilities better, reduce code size per file, make parts of it reusable and easily extensible.
 
 - :heavy_check_mark: Add depth buffering
