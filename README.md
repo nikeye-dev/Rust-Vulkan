@@ -34,13 +34,6 @@ https://youtu.be/ELPfSUrOmJY
 ![Screenshot 2024-08-16 103057](https://github.com/user-attachments/assets/11aecb25-0a9f-464a-aafe-d4e8625fac24)
 
 
-Aug 13 2024:
-![image](https://github.com/user-attachments/assets/4b3c6244-899c-43cf-bcdc-264a4c5225c7)
-
-
-![image](https://github.com/user-attachments/assets/3c23bce8-ef6e-49fc-83b6-26733b931f5d)
-
-
 ## Target Final Result:
 Similar to my Unreal Engine atmosphere shader rendering:
 
