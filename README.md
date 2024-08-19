@@ -20,8 +20,8 @@ The main idea behind this project is to learn Vulkan API and Rust together, base
 ## Current Progress:
 Aug 16 2024:
 
-https://youtu.be/ELPfSUrOmJY
-
+[V1 SHOWCASE VIDEO](https://youtu.be/ELPfSUrOmJY)
+<br/><br/>
 
 ![Screenshot 2024-08-16 102845](https://github.com/user-attachments/assets/b2a68a60-8e46-4027-8520-50d0951b9f82)
 
